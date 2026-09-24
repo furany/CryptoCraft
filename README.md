@@ -3,11 +3,10 @@
 CryptoCraft displays cryptocurrency prices above ordinary Minecraft blocks on Paper and Purpur. The block remains a normal vanilla block, so players can still interact with it as usual. A floating text display is attached to the block and is removed when the anchor block is broken.
 
 [![Build](https://github.com/furany/CryptoCraft/actions/workflows/build.yml/badge.svg)](https://github.com/furany/CryptoCraft/actions/workflows/build.yml)
-[![Latest Release](https://img.shields.io/github/v/release/furany/CryptoCraft)](https://github.com/furany/CryptoCraft/releases/latest)
 
-## Download
+## Download a test build
 
-Download the latest compiled JAR from the [Releases page](https://github.com/furany/CryptoCraft/releases/latest). Place the JAR in your server's `plugins` directory and restart Paper or Purpur.
+There is no stable release yet. To try the current build, open the [GitHub Actions build runs](https://github.com/furany/CryptoCraft/actions/workflows/build.yml), select the latest successful **Build CryptoCraft** run, and download the **CryptoCraft** artifact. GitHub keeps test artifacts for 30 days. Extract the JAR, place it in your server's `plugins` directory, and restart Paper or Purpur.
 
 ## Requirements
 
