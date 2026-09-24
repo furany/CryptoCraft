@@ -4,9 +4,19 @@ CryptoCraft displays cryptocurrency prices above ordinary Minecraft blocks on Pa
 
 [![Build](https://github.com/furany/CryptoCraft/actions/workflows/build.yml/badge.svg)](https://github.com/furany/CryptoCraft/actions/workflows/build.yml)
 
-## Download a test build
+## Download
 
-There is no stable release yet. To try the current build, open the [GitHub Actions build runs](https://github.com/furany/CryptoCraft/actions/workflows/build.yml), select the latest successful **Build CryptoCraft** run, and download the **CryptoCraft** artifact. GitHub keeps test artifacts for 30 days. Extract the JAR, place it in your server's `plugins` directory, and restart Paper or Purpur.
+Download the latest compiled plugin JAR from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place it in your server's `plugins` directory and restart Paper or Purpur.
+
+## Screenshots
+
+Command help in game:
+
+![CryptoCraft command help in Minecraft](screenshots/command-help.png)
+
+BTC/EUR price board in game:
+
+![CryptoCraft BTC/EUR price board in Minecraft](screenshots/btc-eur-board.png)
 
 ## Requirements
 
