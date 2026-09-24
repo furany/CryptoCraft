@@ -1,0 +1,48 @@
+# Price polling. All active boards share a single request per refresh.
+prices:
+  # Automatic refresh interval. 300 seconds = 5 minutes.
+  refresh-interval-seconds: 300
+  # Global minimum delay between requests, including refreshes triggered by commands.
+  minimum-request-interval-seconds: 60
+  request-timeout-seconds: 20
+  stale-after-minutes: 10
+  retry:
+    initial-delay-seconds: 60
+    maximum-delay-seconds: 3600
+
+boards:
+  # Number of boards allowed per player without a special permission.
+  default-limit-per-player: 1
+  # Admins may place unlimited boards when they have the admin permission.
+  admin-bypass-limit: true
+  admin-permission: cryptocraft.admin
+  unlimited-permission: cryptocraft.limit.unlimited
+  # LuckPerms nodes and their board limits. If several match, the highest limit applies.
+  permission-limits:
+    cryptocraft.limit.vip: 3
+    cryptocraft.limit.elite: 5
+  display-height: 1.35
+
+api:
+  # CoinGecko Simple Price API or a compatible endpoint.
+  url: "https://api.coingecko.com/api/v3/simple/price"
+  # Optional. Leave empty to use CoinGecko's keyless Public API.
+  demo-key: ""
+  query:
+    coin-ids-parameter: ids
+    currencies-parameter: vs_currencies
+    include-24hr-change: true
+    include-last-updated-at: true
+    # Extra query parameters for compatible API proxies, e.g. parameter-name: "value"
+    additional-parameters: {}
+
+coins:
+  BTC: bitcoin
+  ETH: ethereum
+  SOL: solana
+
+currencies:
+  - EUR
+
+# Currency used when a command omits its optional currency argument.
+default-currency: EUR

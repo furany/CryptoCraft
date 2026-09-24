@@ -1,0 +1,34 @@
+name: CryptoCraft
+version: '1.0.0'
+main: de.cryptocraft.CryptoCraftPlugin
+api-version: '26.3'
+description: Shows cryptocurrency prices on placeable boards.
+authors: [CryptoCraft]
+
+commands:
+  crypto:
+    description: Manage cryptocurrency price boards.
+    usage: /crypto <place|remove|list|price|reload>
+    aliases: [cryptocraft]
+    permission: cryptocraft.use
+    permission-message: You do not have permission to use CryptoCraft.
+
+permissions:
+  cryptocraft.use:
+    description: Allows use of CryptoCraft commands.
+    default: true
+  cryptocraft.place:
+    description: Allows placing price boards.
+    default: true
+  cryptocraft.limit.unlimited:
+    description: Removes the limit on price boards.
+    default: op
+  cryptocraft.limit.vip:
+    description: Uses the VIP board limit configured in config.yml.
+    default: false
+  cryptocraft.limit.elite:
+    description: Uses the Elite board limit configured in config.yml.
+    default: false
+  cryptocraft.admin:
+    description: Erlaubt die Verwaltung und hebt das Anzeigelimit auf.
+    default: op
