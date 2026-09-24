@@ -1,5 +1,7 @@
 # CryptoCraft
 
+![CryptoCraft banner: live cryptocurrency prices on in-game boards](assets/cryptocraft-banner.png)
+
 CryptoCraft displays cryptocurrency prices above ordinary Minecraft blocks on Paper and Purpur. The block remains a normal vanilla block, so players can still interact with it as usual. A floating text display is attached to the block and is removed when the anchor block is broken.
 
 [![Build](https://github.com/furany/CryptoCraft/actions/workflows/build.yml/badge.svg)](https://github.com/furany/CryptoCraft/actions/workflows/build.yml)
