@@ -43,6 +43,8 @@ coins:
 
 currencies:
   - EUR
+  - USD
+  - TRY
 
 # Currency used when a command omits its optional currency argument.
 default-currency: EUR

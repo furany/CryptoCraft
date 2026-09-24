@@ -60,7 +60,7 @@ Commands:
 - `/crypto price <coin> [currency]` — show the cached price
 - `/crypto reload` — reload the configuration (admin permission required)
 
-BTC, ETH, and SOL are configured in EUR by default. All active boards share one price request per refresh interval.
+BTC, ETH, and SOL are configured by default. EUR is the default currency; EUR, USD, and TRY (Turkish lira) are available. For example, use `/crypto place BTC USD` for the Bitcoin price in US dollars or `/crypto place BTC TRY` for Turkish lira. All active boards share one price request per refresh interval.
 
 ## Configuration
 
@@ -103,6 +103,8 @@ coins:
 
 currencies:
   - EUR
+  - USD
+  - TRY
 
 default-currency: EUR
 ```
