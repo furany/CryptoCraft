@@ -30,3 +30,6 @@ permissions:
   cryptocraft.admin:
     description: Erlaubt die Verwaltung und hebt das Anzeigelimit auf.
     default: op
+  cryptocraft.teleport:
+    description: Allows teleporting to CryptoCraft boards.
+    default: op

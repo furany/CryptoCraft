@@ -60,7 +60,7 @@ Commands:
 
 - `/crypto place <coin> [currency]` — place a board on the block you are looking at
 - `/crypto remove` — remove your board from the block you are looking at
-- `/crypto list` — list your boards; click one to teleport to it
+- `/crypto list` — list your boards; users with teleport permission can click one to teleport
 - `/crypto tp <board-id>` — teleport to one of your boards (admins can teleport to any board)
 - `/crypto price <coin> [currency]` — show the cached price
 - `/crypto reload` — reload the configuration (admin permission required)
@@ -135,7 +135,10 @@ LuckPerms examples:
 /lp group elite permission set cryptocraft.limit.elite true
 /lp group staff permission set cryptocraft.limit.unlimited true
 /lp group admin permission set cryptocraft.admin true
+/lp group admin permission set cryptocraft.teleport true
 ```
+
+`cryptocraft.teleport` defaults to operators. Grant it explicitly to allow non-admin players to teleport to their own boards; players without it cannot use `/crypto tp` or clickable board entries. Admins (the permission configured at `boards.admin-permission`) can teleport to any board.
 
 The plugin uses Bukkit permissions directly and has no API dependency on LuckPerms, EssentialsX, or Vault. EssentialsX can remain installed; CryptoCraft uses the `/crypto` command.
 

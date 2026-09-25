@@ -63,7 +63,10 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
         if (args.length == 1) {
-            List<String> subcommands = new ArrayList<>(List.of("place", "remove", "list", "price", "tp"));
+            List<String> subcommands = new ArrayList<>(List.of("place", "remove", "list", "price"));
+            if (canTeleport(sender)) {
+                subcommands.add("tp");
+            }
             if (isAdmin(sender)) {
                 subcommands.add("reload");
             }
@@ -79,7 +82,8 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2 && subcommand.equals("price")) {
             return complete(getConfiguredCoins(), args[1]);
         }
-        if (args.length == 2 && subcommand.equals("tp") && sender instanceof Player player) {
+        if (args.length == 2 && subcommand.equals("tp") && canTeleport(sender)
+                && sender instanceof Player player) {
             return complete(getVisibleBoards(player).stream().map(CryptoBoard::id).toList(), args[1]);
         }
         if (args.length == 3 && (subcommand.equals("place") || subcommand.equals("price"))) {
@@ -195,7 +199,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
                     "owner", board.ownerName()
             ));
             Component line = PREFIX.append(Component.text(entry, NamedTextColor.GRAY));
-            if (sender instanceof Player) {
+            if (sender instanceof Player && canTeleport(sender)) {
                 line = line.clickEvent(ClickEvent.runCommand("/crypto tp " + board.id()))
                         .hoverEvent(HoverEvent.showText(Component.text(
                                 plugin.messages().get("listHover"), NamedTextColor.GOLD)));
@@ -205,6 +209,10 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
     }
 
     private void teleport(CommandSender sender, String[] args) {
+        if (!canTeleport(sender)) {
+            send(sender, "permissionTeleport");
+            return;
+        }
         if (!(sender instanceof Player player)) {
             send(sender, "playerOnlyTeleport");
             return;
@@ -321,7 +329,9 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         send(sender, "helpRemove");
         send(sender, "helpList");
         send(sender, "helpPrice");
-        send(sender, "helpTeleport");
+        if (canTeleport(sender)) {
+            send(sender, "helpTeleport");
+        }
         if (isAdmin(sender)) {
             send(sender, "helpReload");
         }
@@ -387,6 +397,10 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
     private boolean isAdmin(CommandSender sender) {
         String permission = plugin.getConfig().getString("boards.admin-permission", "cryptocraft.admin");
         return permission != null && !permission.isBlank() && sender.hasPermission(permission);
+    }
+
+    private boolean canTeleport(CommandSender sender) {
+        return sender.hasPermission("cryptocraft.teleport") || isAdmin(sender);
     }
 
     private String getDefaultCurrency() {
