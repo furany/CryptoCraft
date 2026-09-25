@@ -17,7 +17,6 @@ import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapRenderer;
 import org.bukkit.map.MapView;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,14 +29,14 @@ import java.util.UUID;
 import java.util.logging.Level;
 
 public final class CryptoBoardService {
-    private final JavaPlugin plugin;
+    private final CryptoCraftPlugin plugin;
     private final Map<String, CryptoBoard> boards = new LinkedHashMap<>();
     private final Map<String, CryptoBoard> byLocation = new LinkedHashMap<>();
     private final File file;
     private final YamlConfiguration data = new YamlConfiguration();
     private final org.bukkit.NamespacedKey boardKey;
 
-    public CryptoBoardService(JavaPlugin plugin) {
+    public CryptoBoardService(CryptoCraftPlugin plugin) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "boards.yml");
         this.boardKey = new org.bukkit.NamespacedKey(plugin, "board_id");
