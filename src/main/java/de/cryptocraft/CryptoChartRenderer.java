@@ -5,7 +5,6 @@ import org.bukkit.map.MapCanvas;
 import org.bukkit.map.MapRenderer;
 import org.bukkit.map.MapView;
 import org.bukkit.map.MinecraftFont;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -29,12 +28,12 @@ public final class CryptoChartRenderer extends MapRenderer {
     private static final Color DOWN = new Color(229, 77, 85);
     private static final Color NEUTRAL = new Color(87, 159, 220);
 
-    private final JavaPlugin plugin;
+    private final CryptoCraftPlugin plugin;
     private final CryptoBoard board;
     private final CryptoPriceService prices;
     private volatile BufferedImage frame;
 
-    public CryptoChartRenderer(JavaPlugin plugin, CryptoBoard board, CryptoPriceService prices) {
+    public CryptoChartRenderer(CryptoCraftPlugin plugin, CryptoBoard board, CryptoPriceService prices) {
         this.plugin = plugin;
         this.board = board;
         this.prices = prices;
