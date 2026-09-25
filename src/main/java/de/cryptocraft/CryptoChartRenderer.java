@@ -12,6 +12,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.awt.geom.Path2D;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -20,14 +21,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public final class CryptoChartRenderer extends MapRenderer {
     private static final int SIZE = 128;
     private static final int PLOT_LEFT = 44;
     private static final int PLOT_RIGHT = 123;
-    private static final int PLOT_TOP = 42;
-    private static final int PLOT_BOTTOM = 96;
+    private static final int PLOT_TOP = 38;
+    private static final int PLOT_BOTTOM = 97;
     private static final Color BACKGROUND = new Color(14, 20, 31);
+    private static final Color PLOT_BACKGROUND = new Color(18, 26, 38);
     private static final Color GRID = new Color(40, 51, 67);
     private static final Color UP = new Color(36, 190, 125);
     private static final Color DOWN = new Color(229, 77, 85);
@@ -70,29 +73,28 @@ public final class CryptoChartRenderer extends MapRenderer {
         BufferedImage image = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = image.createGraphics();
         try {
-            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
                     RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
             graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
                     RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
             graphics.setColor(BACKGROUND);
             graphics.fillRect(0, 0, SIZE, SIZE);
-            graphics.setColor(GRID);
-            graphics.drawRect(1, 1, SIZE - 3, SIZE - 3);
 
             List<CryptoPriceService.PricePoint> points = getVisibleHistory();
             CryptoPriceService.Quote quote = prices.getQuote(board.coinId(), board.currency());
             int historyHours = getChartHistoryHours();
             PriceRange scale = calculateScale(points);
+            TimeWindow timeWindow = getTimeWindow(points, historyHours);
 
             drawHeader(graphics, quote);
-            drawGrid(graphics, scale, historyHours);
+            drawGrid(graphics, scale, timeWindow);
             if (points.size() >= 2 && scale != null) {
-                drawPriceLine(graphics, points, scale, historyHours);
+                drawPriceLine(graphics, points, scale, timeWindow);
             } else if (points.size() == 1 && scale != null) {
-                drawLatestPoint(graphics, points.get(0), scale, historyHours);
+                drawLatestPoint(graphics, points.get(0), scale, timeWindow);
             }
-            drawFooter(graphics, points.size());
+            drawFooter(graphics, points.size(), timeWindow, historyHours);
         } finally {
             graphics.dispose();
         }
@@ -104,28 +106,42 @@ public final class CryptoChartRenderer extends MapRenderer {
         graphics.setColor(MUTED_TEXT);
         graphics.drawString(board.symbol() + "/" + board.currency(), 4, 10);
 
-        graphics.setFont(PRICE_FONT);
+        graphics.setFont(LABEL_FONT);
         if (quote == null) {
             graphics.setColor(TEXT);
-            graphics.drawString("PRICE LOADING", 4, 22);
+            String loading = plugin.messages().get("chartLoading");
+            graphics.drawString(loading, PLOT_RIGHT - graphics.getFontMetrics().stringWidth(loading), 10);
         } else {
-            graphics.setColor(TEXT);
-            graphics.drawString(formatPrice(quote.price()) + " " + board.currency(), 4, 22);
             if (quote.change24h() != null) {
                 String sign = quote.change24h().signum() > 0 ? "+" : "";
                 String change = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US))
                         .format(quote.change24h());
+                String changeLabel = plugin.messages().get("chartChangeLabel") + " " + sign + change + "%";
                 graphics.setColor(quote.change24h().signum() >= 0 ? UP : DOWN);
-                graphics.setFont(LABEL_FONT);
-                graphics.drawString("24H " + sign + change + "%", 4, 33);
+                graphics.drawString(changeLabel,
+                        PLOT_RIGHT - graphics.getFontMetrics().stringWidth(changeLabel), 10);
             }
+
+            graphics.setFont(PRICE_FONT);
+            graphics.setColor(TEXT);
+            graphics.drawString(formatPrice(quote.price()), 4, 25);
+            graphics.setFont(LABEL_FONT);
+            graphics.setColor(MUTED_TEXT);
+            String currency = board.currency();
+            graphics.drawString(currency,
+                    PLOT_RIGHT - graphics.getFontMetrics().stringWidth(currency), 25);
         }
 
         graphics.setColor(GRID);
-        graphics.drawLine(4, 36, PLOT_RIGHT, 36);
+        graphics.drawLine(4, 30, PLOT_RIGHT, 30);
     }
 
-    private void drawGrid(Graphics2D graphics, PriceRange scale, int historyHours) {
+    private void drawGrid(Graphics2D graphics, PriceRange scale, TimeWindow timeWindow) {
+        graphics.setColor(PLOT_BACKGROUND);
+        graphics.fillRect(PLOT_LEFT, PLOT_TOP, PLOT_RIGHT - PLOT_LEFT, PLOT_BOTTOM - PLOT_TOP);
+        graphics.setColor(GRID);
+        graphics.drawRect(PLOT_LEFT, PLOT_TOP, PLOT_RIGHT - PLOT_LEFT, PLOT_BOTTOM - PLOT_TOP);
+
         graphics.setFont(LABEL_FONT);
         FontMetrics metrics = graphics.getFontMetrics();
         for (int row = 0; row <= 4; row++) {
@@ -146,60 +162,87 @@ public final class CryptoChartRenderer extends MapRenderer {
         graphics.drawLine(PLOT_LEFT, PLOT_TOP, PLOT_LEFT, PLOT_BOTTOM);
         graphics.drawLine(middleX, PLOT_TOP, middleX, PLOT_BOTTOM);
         graphics.drawLine(PLOT_RIGHT, PLOT_TOP, PLOT_RIGHT, PLOT_BOTTOM);
-        drawTimeLabels(graphics, metrics, historyHours, middleX);
+        drawTimeLabels(graphics, metrics, timeWindow, middleX);
     }
 
-    private void drawTimeLabels(Graphics2D graphics, FontMetrics metrics, int historyHours, int middleX) {
+    private void drawTimeLabels(Graphics2D graphics, FontMetrics metrics, TimeWindow timeWindow, int middleX) {
         graphics.setFont(LABEL_FONT);
         graphics.setColor(MUTED_TEXT);
-        String startLabel = "-" + historyHours + "h";
-        String middleLabel = formatLookbackMinutes(historyHours * 30);
-        String endLabel = "NOW";
+        String startLabel = "-" + formatDuration(timeWindow.visibleMinutes());
+        String middleLabel = "-" + formatDuration(Math.max(1, timeWindow.visibleMinutes() / 2));
+        String endLabel = plugin.messages().get("chartNow");
         graphics.drawString(startLabel, PLOT_LEFT, 109);
         graphics.drawString(middleLabel, middleX - metrics.stringWidth(middleLabel) / 2, 109);
         graphics.drawString(endLabel, PLOT_RIGHT - metrics.stringWidth(endLabel), 109);
     }
 
     private void drawPriceLine(Graphics2D graphics, List<CryptoPriceService.PricePoint> points,
-                               PriceRange scale, int historyHours) {
+                               PriceRange scale, TimeWindow timeWindow) {
         BigDecimal firstPrice = points.get(0).price();
         BigDecimal lastPrice = points.get(points.size() - 1).price();
         int direction = lastPrice.compareTo(firstPrice);
         Color lineColor = direction > 0 ? UP : direction < 0 ? DOWN : NEUTRAL;
-        long endMillis = Instant.now().toEpochMilli();
-        long startMillis = endMillis - Duration.ofHours(historyHours).toMillis();
-        graphics.setColor(lineColor);
-        graphics.setStroke(new BasicStroke(2f));
-
-        int lastX = xForTime(points.get(0).observedAt(), startMillis, endMillis);
-        int lastY = yForPrice(firstPrice, scale);
+        long startMillis = timeWindow.start().toEpochMilli();
+        long endMillis = timeWindow.end().toEpochMilli();
+        Path2D.Double line = new Path2D.Double();
+        Path2D.Double area = new Path2D.Double();
+        int firstX = xForTime(points.get(0).observedAt(), startMillis, endMillis);
+        int firstY = yForPrice(firstPrice, scale);
+        line.moveTo(firstX, firstY);
+        area.moveTo(firstX, PLOT_BOTTOM);
+        area.lineTo(firstX, firstY);
+        int lastX = firstX;
+        int lastY = firstY;
         for (int index = 1; index < points.size(); index++) {
             CryptoPriceService.PricePoint point = points.get(index);
             int x = xForTime(point.observedAt(), startMillis, endMillis);
             int y = yForPrice(point.price(), scale);
-            graphics.drawLine(lastX, lastY, x, y);
+            line.lineTo(x, y);
+            area.lineTo(x, y);
             lastX = x;
             lastY = y;
         }
-        graphics.fillOval(lastX - 2, lastY - 2, 5, 5);
+        area.lineTo(lastX, PLOT_BOTTOM);
+        area.closePath();
+
+        graphics.setColor(withAlpha(lineColor, 48));
+        graphics.fill(area);
+        graphics.setColor(withAlpha(lineColor, 100));
+        graphics.setStroke(new BasicStroke(1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND,
+                1f, new float[]{2f, 3f}, 0f));
+        graphics.drawLine(PLOT_LEFT, lastY, PLOT_RIGHT, lastY);
+        graphics.setColor(lineColor);
+        graphics.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        graphics.draw(line);
+        graphics.setColor(TEXT);
+        graphics.fillOval(lastX - 3, lastY - 3, 7, 7);
+        graphics.setColor(lineColor);
+        graphics.fillOval(lastX - 1, lastY - 1, 3, 3);
     }
 
     private void drawLatestPoint(Graphics2D graphics, CryptoPriceService.PricePoint point,
-                                 PriceRange scale, int historyHours) {
+                                 PriceRange scale, TimeWindow timeWindow) {
         graphics.setColor(NEUTRAL);
-        long endMillis = Instant.now().toEpochMilli();
-        long startMillis = endMillis - Duration.ofHours(historyHours).toMillis();
+        long startMillis = timeWindow.start().toEpochMilli();
+        long endMillis = timeWindow.end().toEpochMilli();
         int x = xForTime(point.observedAt(), startMillis, endMillis);
         int y = yForPrice(point.price(), scale);
-        graphics.fillOval(x - 2, y - 2, 5, 5);
+        graphics.setColor(TEXT);
+        graphics.fillOval(x - 3, y - 3, 7, 7);
+        graphics.setColor(NEUTRAL);
+        graphics.fillOval(x - 1, y - 1, 3, 3);
     }
 
-    private void drawFooter(Graphics2D graphics, int pointCount) {
+    private void drawFooter(Graphics2D graphics, int pointCount, TimeWindow timeWindow, int historyHours) {
         graphics.setFont(LABEL_FONT);
         graphics.setColor(MUTED_TEXT);
         String footer = pointCount < 2
                 ? plugin.messages().get("chartCollecting")
-                : "n=" + pointCount;
+                : plugin.messages().get("chartCoverage", Map.of(
+                        "visible", formatDuration(timeWindow.visibleMinutes()),
+                        "window", formatDuration(historyHours * 60),
+                        "samples", String.valueOf(pointCount)
+                ));
         graphics.drawString(footer, 4, 122);
     }
 
@@ -215,6 +258,19 @@ public final class CryptoChartRenderer extends MapRenderer {
             maximum += padding;
         }
         return new PriceRange(minimum, maximum);
+    }
+
+    private TimeWindow getTimeWindow(List<CryptoPriceService.PricePoint> points, int historyHours) {
+        Instant end = Instant.now();
+        Instant start = end.minus(Duration.ofHours(historyHours));
+        if (!points.isEmpty() && points.get(0).observedAt().isAfter(start)) {
+            start = points.get(0).observedAt();
+        }
+        long durationMillis = Math.max(Duration.ofMinutes(1).toMillis(),
+                Duration.between(start, end).toMillis());
+        start = end.minusMillis(durationMillis);
+        int visibleMinutes = Math.max(1, (int) Math.ceil(durationMillis / 60_000.0));
+        return new TimeWindow(start, end, visibleMinutes);
     }
 
     private int xForTime(Instant observedAt, long startMillis, long endMillis) {
@@ -243,12 +299,20 @@ public final class CryptoChartRenderer extends MapRenderer {
                 plugin.getConfig().getInt("boards.chart-history-hours", 24)));
     }
 
-    private String formatLookbackMinutes(int minutes) {
+    private String formatDuration(int minutes) {
         if (minutes < 60) {
-            return "-" + minutes + "m";
+            return minutes + "m";
         }
-        int hours = minutes / 60;
-        return minutes % 60 == 0 ? "-" + hours + "h" : "-" + hours + ".5h";
+        if (minutes < 1440) {
+            int hours = minutes / 60;
+            return minutes % 60 == 0 ? hours + "h" : hours + ".5h";
+        }
+        int days = minutes / 1440;
+        return minutes % 1440 == 0 ? days + "d" : days + ".5d";
+    }
+
+    private Color withAlpha(Color color, int alpha) {
+        return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
     }
 
     private String formatAxisPrice(double price) {
@@ -291,5 +355,8 @@ public final class CryptoChartRenderer extends MapRenderer {
     }
 
     private record PriceRange(double minimum, double maximum) {
+    }
+
+    private record TimeWindow(Instant start, Instant end, int visibleMinutes) {
     }
 }
