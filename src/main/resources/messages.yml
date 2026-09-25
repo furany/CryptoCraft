@@ -46,7 +46,7 @@ languages:
     helpTeleport: "/crypto tp <board-id> — teleport to one of your boards"
     helpReload: "/crypto reload — reload configuration and messages"
     helpUnknown: "Unknown command. Use /crypto for help."
-    chartCollecting: "COLLECTING PRICE HISTORY"
+    chartCollecting: "COLLECTING PRICE DATA"
 
   de:
     permissionUse: "Du hast keine Berechtigung, CryptoCraft zu verwenden."
@@ -92,4 +92,4 @@ languages:
     helpTeleport: "/crypto tp <Board-ID> — zu einem eigenen Board teleportieren"
     helpReload: "/crypto reload — Konfiguration und Meldungen neu laden"
     helpUnknown: "Unbekannter Befehl. Nutze /crypto für die Hilfe."
-    chartCollecting: "KURSVERLAUF WIRD GESAMMELT"
+    chartCollecting: "KURSVERLAUF WIRD ERFASST"
