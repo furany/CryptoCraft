@@ -1,5 +1,7 @@
 package de.cryptocraft;
 
+import org.bukkit.block.BlockFace;
+
 import java.util.Locale;
 import java.util.UUID;
 
@@ -14,7 +16,8 @@ public record CryptoBoard(
         int z,
         String symbol,
         String coinId,
-        String currency
+        String currency,
+        BlockFace displayFacing
 ) {
     public String locationKey() {
         return worldId + ":" + x + ":" + y + ":" + z;

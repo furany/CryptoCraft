@@ -1,21 +1,29 @@
 package de.cryptocraft;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
-public final class CryptoCommand implements CommandExecutor {
+public final class CryptoCommand implements CommandExecutor, TabCompleter {
     private static final Component PREFIX = Component.text("[CryptoCraft] ", NamedTextColor.GOLD);
     private final CryptoCraftPlugin plugin;
 
@@ -25,6 +33,10 @@ public final class CryptoCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!sender.hasPermission("cryptocraft.use")) {
+            send(sender, "permissionUse");
+            return true;
+        }
         if (args.length == 0) {
             help(sender);
             return true;
@@ -35,51 +47,82 @@ public final class CryptoCommand implements CommandExecutor {
             case "remove" -> remove(sender);
             case "list" -> list(sender);
             case "price" -> price(sender, args);
+            case "tp" -> teleport(sender, args);
             case "reload" -> reload(sender);
-            default -> help(sender);
+            default -> {
+                send(sender, "helpUnknown");
+                help(sender);
+            }
         }
         return true;
     }
 
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!sender.hasPermission("cryptocraft.use")) {
+            return List.of();
+        }
+        if (args.length == 1) {
+            List<String> subcommands = new ArrayList<>(List.of("place", "remove", "list", "price", "tp"));
+            if (isAdmin(sender)) {
+                subcommands.add("reload");
+            }
+            return complete(subcommands, args[0]);
+        }
+
+        String subcommand = args[0].toLowerCase(Locale.ROOT);
+        if (args.length == 2 && subcommand.equals("place")) {
+            return sender.hasPermission("cryptocraft.place")
+                    ? complete(getConfiguredCoins(), args[1])
+                    : List.of();
+        }
+        if (args.length == 2 && subcommand.equals("price")) {
+            return complete(getConfiguredCoins(), args[1]);
+        }
+        if (args.length == 2 && subcommand.equals("tp") && sender instanceof Player player) {
+            return complete(getVisibleBoards(player).stream().map(CryptoBoard::id).toList(), args[1]);
+        }
+        if (args.length == 3 && (subcommand.equals("place") || subcommand.equals("price"))) {
+            return complete(getConfiguredCurrencies(), args[2]);
+        }
+        return List.of();
+    }
+
     private void place(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
-            send(sender, "Only players can place a board.");
+            send(sender, "playerOnlyPlace");
             return;
         }
         if (!player.hasPermission("cryptocraft.place")) {
-            send(sender, "You do not have permission to place boards.");
+            send(sender, "permissionPlace");
             return;
         }
         if (args.length < 2 || args.length > 3) {
-            send(sender, "Usage: /crypto place <coin> [currency]");
+            send(sender, "usagePlace");
             return;
         }
 
         String symbol = args[1].toUpperCase(Locale.ROOT);
         String coinId = plugin.getConfig().getString("coins." + symbol);
         if (coinId == null || coinId.isBlank()) {
-            var configuredCoins = plugin.getConfig().getConfigurationSection("coins");
-            String available = configuredCoins == null ? "none" : String.join(", ", configuredCoins.getKeys(false));
-            send(sender, "That coin is not configured. Available: " + available);
+            send(sender, "coinUnknown", Map.of("coins", String.join(", ", getConfiguredCoins())));
             return;
         }
 
         String currency = (args.length == 3 ? args[2] : getDefaultCurrency()).toUpperCase(Locale.ROOT);
-        List<String> configuredCurrencies = plugin.getConfig().getStringList("currencies").stream()
-                .map(value -> value.toUpperCase(Locale.ROOT))
-                .toList();
+        List<String> configuredCurrencies = getConfiguredCurrencies();
         if (!configuredCurrencies.contains(currency)) {
-            send(sender, "That currency is not configured. Available: " + String.join(", ", configuredCurrencies));
+            send(sender, "currencyUnknown", Map.of("currencies", String.join(", ", configuredCurrencies)));
             return;
         }
 
         Block target = player.getTargetBlockExact(6);
         if (target == null || target.getType().isAir()) {
-            send(sender, "Look at the vanilla block where the board should appear.");
+            send(sender, "targetBlock");
             return;
         }
         if (plugin.boards().findAt(target) != null) {
-            send(sender, "There is already a price board on that block.");
+            send(sender, "boardExists");
             return;
         }
 
@@ -91,7 +134,7 @@ public final class CryptoCommand implements CommandExecutor {
         int limit = getBoardLimit(player);
         int current = plugin.boards().getBoardsOwnedBy(player.getUniqueId()).size();
         if (!unlimited && current >= limit) {
-            send(sender, "You have reached your limit of " + limit + " board(s).");
+            send(sender, "boardLimit", Map.of("limit", String.valueOf(limit)));
             return;
         }
 
@@ -101,105 +144,223 @@ public final class CryptoCommand implements CommandExecutor {
                 target,
                 symbol,
                 coinId.toLowerCase(Locale.ROOT),
-                currency
+                currency,
+                player.getFacing().getOppositeFace()
         );
         plugin.boards().ensureBoardsInChunk(target.getChunk(), plugin.prices());
         plugin.prices().refresh();
-        send(sender, "Showing " + symbol + " / " + currency + " above the block. Breaking the block also removes the board.");
+        send(sender, "placeSuccess", Map.of("symbol", symbol, "currency", currency));
     }
 
     private void remove(CommandSender sender) {
         if (!(sender instanceof Player player)) {
-            send(sender, "Only players can remove a board. Look at its anchor block.");
+            send(sender, "playerOnlyRemove");
             return;
         }
         Block target = player.getTargetBlockExact(6);
         if (target == null) {
-            send(sender, "Look at the anchor block of the board you want to remove.");
+            send(sender, "removeTarget");
             return;
         }
         CryptoBoard board = plugin.boards().findAt(target);
         if (board == null) {
-            send(sender, "There is no price board on that block.");
+            send(sender, "boardNotFound");
             return;
         }
         if (!board.ownerId().equals(player.getUniqueId()) && !isAdmin(player)) {
-            send(sender, "You can only remove your own boards.");
+            send(sender, "removeOwnOnly");
             return;
         }
         plugin.boards().remove(board);
-        send(sender, "Price board removed. The block is unchanged.");
+        send(sender, "removeSuccess");
     }
 
     private void list(CommandSender sender) {
-        List<CryptoBoard> visible;
-        if (sender instanceof Player player && !isAdmin(player)) {
-            visible = plugin.boards().getBoardsOwnedBy(player.getUniqueId());
-        } else {
-            visible = plugin.boards().getBoards();
-        }
+        List<CryptoBoard> visible = sender instanceof Player player
+                ? getVisibleBoards(player)
+                : plugin.boards().getBoards();
         if (visible.isEmpty()) {
-            send(sender, "No price boards found.");
+            send(sender, "listEmpty");
             return;
         }
-        send(sender, "Boards: " + visible.size());
+        send(sender, "listHeader", Map.of("count", String.valueOf(visible.size())));
         for (CryptoBoard board : visible) {
-            send(sender, board.symbol() + "/" + board.currency() + " at "
-                    + board.worldName() + " " + board.x() + " " + board.y() + " " + board.z()
-                    + " (owner " + board.ownerName() + ")");
+            String entry = plugin.messages().get("listEntry", Map.of(
+                    "symbol", board.symbol(),
+                    "currency", board.currency(),
+                    "world", board.worldName(),
+                    "x", String.valueOf(board.x()),
+                    "y", String.valueOf(board.y()),
+                    "z", String.valueOf(board.z()),
+                    "owner", board.ownerName()
+            ));
+            Component line = PREFIX.append(Component.text(entry, NamedTextColor.GRAY));
+            if (sender instanceof Player) {
+                line = line.clickEvent(ClickEvent.runCommand("/crypto tp " + board.id()))
+                        .hoverEvent(HoverEvent.showText(Component.text(
+                                plugin.messages().get("listHover"), NamedTextColor.GOLD)));
+            }
+            sender.sendMessage(line);
         }
+    }
+
+    private void teleport(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            send(sender, "playerOnlyTeleport");
+            return;
+        }
+        if (args.length != 2) {
+            send(sender, "teleportUsage");
+            return;
+        }
+        CryptoBoard board = plugin.boards().getBoard(args[1]);
+        if (board == null) {
+            send(sender, "boardIdUnknown");
+            return;
+        }
+        if (!board.ownerId().equals(player.getUniqueId()) && !isAdmin(player)) {
+            send(sender, "teleportOwnOnly");
+            return;
+        }
+        World world = Bukkit.getWorld(board.worldId());
+        if (world == null) {
+            world = Bukkit.getWorld(board.worldName());
+        }
+        if (world == null) {
+            send(sender, "teleportWorldUnloaded");
+            return;
+        }
+        Location destination = findSafeLocation(board, world, player.getLocation());
+        if (destination == null) {
+            send(sender, "teleportNoSafeSpot");
+            return;
+        }
+        if (!player.teleport(destination)) {
+            send(sender, "teleportFailed");
+            return;
+        }
+        send(sender, "teleportSuccess");
+    }
+
+    private Location findSafeLocation(CryptoBoard board, World world, Location currentLocation) {
+        for (int radius = 0; radius <= 3; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                        continue;
+                    }
+                    for (int dy = 1; dy <= 5; dy++) {
+                        int x = board.x() + dx;
+                        int y = board.y() + dy;
+                        int z = board.z() + dz;
+                        if (y + 1 >= world.getMaxHeight() || y - 1 < world.getMinHeight()) {
+                            continue;
+                        }
+                        Block floor = world.getBlockAt(x, y - 1, z);
+                        Block feet = world.getBlockAt(x, y, z);
+                        Block head = world.getBlockAt(x, y + 1, z);
+                        if (!floor.isPassable() && feet.isPassable() && head.isPassable()) {
+                            return new Location(world, x + 0.5, y, z + 0.5,
+                                    currentLocation.getYaw(), currentLocation.getPitch());
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private void price(CommandSender sender, String[] args) {
         if (args.length < 2 || args.length > 3) {
-            send(sender, "Usage: /crypto price <coin> [currency]");
+            send(sender, "priceUsage");
             return;
         }
         String symbol = args[1].toUpperCase(Locale.ROOT);
         String coinId = plugin.getConfig().getString("coins." + symbol);
         if (coinId == null) {
-            send(sender, "That coin is not configured.");
+            send(sender, "priceCoinUnknown");
             return;
         }
         String currency = (args.length == 3 ? args[2] : getDefaultCurrency()).toUpperCase(Locale.ROOT);
-        CryptoPriceService.Quote quote = plugin.prices().getQuote(coinId, currency);
-        if (quote == null) {
-            send(sender, "No price is cached yet. Check the API connection and try again after the next refresh.");
+        List<String> configuredCurrencies = getConfiguredCurrencies();
+        if (!configuredCurrencies.contains(currency)) {
+            send(sender, "priceCurrencyUnknown", Map.of("currencies", String.join(", ", configuredCurrencies)));
             return;
         }
 
-        NumberFormat number = NumberFormat.getNumberInstance(Locale.US);
-        number.setMinimumFractionDigits(2);
-        number.setMaximumFractionDigits(2);
-        send(sender, symbol + " / " + currency + ": " + number.format(quote.price()) + " " + currency);
+        CryptoPriceService.Quote quote = plugin.prices().getQuote(coinId, currency);
+        if (quote == null) {
+            send(sender, "quoteUnavailable");
+            return;
+        }
+
+        send(sender, "priceHeading", Map.of(
+                "symbol", symbol,
+                "currency", currency,
+                "price", formatPrice(quote.price())
+        ));
         if (quote.change24h() != null) {
             String sign = quote.change24h().signum() > 0 ? "+" : "";
-            send(sender, "24h " + sign + new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US))
-                    .format(quote.change24h()) + "%");
+            String change = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US))
+                    .format(quote.change24h());
+            send(sender, "priceChange", Map.of("change", sign + change));
         }
     }
 
     private void reload(CommandSender sender) {
         if (!isAdmin(sender)) {
-            send(sender, "You do not have permission to reload CryptoCraft.");
+            send(sender, "reloadDenied");
             return;
         }
         plugin.reloadPluginConfiguration();
-        send(sender, "Configuration reloaded.");
+        send(sender, "reloadSuccess");
     }
 
     private void help(CommandSender sender) {
-        send(sender, "/crypto place <coin> [currency] — use the block you are looking at as the anchor");
-        send(sender, "/crypto remove — remove your board from the block you are looking at");
-        send(sender, "/crypto list — list your boards");
-        send(sender, "/crypto price <coin> [currency] — show the cached price");
+        send(sender, "helpPlace");
+        send(sender, "helpRemove");
+        send(sender, "helpList");
+        send(sender, "helpPrice");
+        send(sender, "helpTeleport");
         if (isAdmin(sender)) {
-            send(sender, "/crypto reload — reload the configuration");
+            send(sender, "helpReload");
         }
     }
 
-    private void send(CommandSender sender, String message) {
-        sender.sendMessage(PREFIX.append(Component.text(message, NamedTextColor.GRAY)));
+    private void send(CommandSender sender, String key) {
+        send(sender, key, Map.of());
+    }
+
+    private void send(CommandSender sender, String key, Map<String, String> values) {
+        sender.sendMessage(PREFIX.append(Component.text(plugin.messages().get(key, values), NamedTextColor.GRAY)));
+    }
+
+    private List<CryptoBoard> getVisibleBoards(Player player) {
+        return isAdmin(player)
+                ? plugin.boards().getBoards()
+                : plugin.boards().getBoardsOwnedBy(player.getUniqueId());
+    }
+
+    private List<String> getConfiguredCoins() {
+        ConfigurationSection configuredCoins = plugin.getConfig().getConfigurationSection("coins");
+        return configuredCoins == null
+                ? List.of()
+                : configuredCoins.getKeys(false).stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
+    }
+
+    private List<String> getConfiguredCurrencies() {
+        return plugin.getConfig().getStringList("currencies").stream()
+                .map(value -> value.toUpperCase(Locale.ROOT))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
+    }
+
+    private List<String> complete(List<String> values, String prefix) {
+        String normalizedPrefix = prefix.toLowerCase(Locale.ROOT);
+        return values.stream()
+                .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(normalizedPrefix))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
     }
 
     private int getBoardLimit(Player player) {
@@ -230,5 +391,15 @@ public final class CryptoCommand implements CommandExecutor {
 
     private String getDefaultCurrency() {
         return plugin.getConfig().getString("default-currency", "EUR");
+    }
+
+    private String formatPrice(java.math.BigDecimal price) {
+        int decimalPlaces = price.abs().compareTo(java.math.BigDecimal.ONE) >= 0
+                ? 2
+                : Math.max(2, Math.min(8, price.stripTrailingZeros().scale()));
+        NumberFormat number = NumberFormat.getNumberInstance(Locale.US);
+        number.setMinimumFractionDigits(Math.min(2, decimalPlaces));
+        number.setMaximumFractionDigits(decimalPlaces);
+        return number.format(price);
     }
 }

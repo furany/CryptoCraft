@@ -8,10 +8,8 @@ authors: [CryptoCraft]
 commands:
   crypto:
     description: Manage cryptocurrency price boards.
-    usage: /crypto <place|remove|list|price|reload>
+    usage: /crypto <place|remove|list|price|tp|reload>
     aliases: [cryptocraft]
-    permission: cryptocraft.use
-    permission-message: You do not have permission to use CryptoCraft.
 
 permissions:
   cryptocraft.use:

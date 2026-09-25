@@ -6,6 +6,8 @@ prices:
   minimum-request-interval-seconds: 60
   request-timeout-seconds: 20
   stale-after-minutes: 10
+  # Keep sampled prices for this many days so boards can draw history charts.
+  history-retention-days: 7
   retry:
     initial-delay-seconds: 60
     maximum-delay-seconds: 3600
@@ -22,6 +24,8 @@ boards:
     cryptocraft.limit.vip: 3
     cryptocraft.limit.elite: 5
   display-height: 1.35
+  # Time window drawn on each chart. Stored samples are shared by boards for the same pair.
+  chart-history-hours: 24
 
 api:
   # CoinGecko Simple Price API or a compatible endpoint.

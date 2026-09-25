@@ -2,7 +2,7 @@
 
 ![CryptoCraft banner: live cryptocurrency prices on in-game boards](assets/cryptocraft-banner.png)
 
-CryptoCraft displays cryptocurrency prices above ordinary Minecraft blocks on Paper and Purpur. The block remains a normal vanilla block, so players can still interact with it as usual. A floating text display is attached to the block and is removed when the anchor block is broken.
+CryptoCraft displays a visual cryptocurrency price chart above ordinary Minecraft blocks on Paper and Purpur. The block remains a normal vanilla block, so players can still interact with it as usual. The chart uses a plugin-rendered map in an invisible, fixed item frame; it is removed when the anchor block is broken and never drops as a map item or frame.
 
 [![Build](https://github.com/furany/CryptoCraft/actions/workflows/build.yml/badge.svg)](https://github.com/furany/CryptoCraft/actions/workflows/build.yml)
 
@@ -11,6 +11,8 @@ CryptoCraft displays cryptocurrency prices above ordinary Minecraft blocks on Pa
 Download the latest compiled plugin JAR from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place it in your server's `plugins` directory and restart Paper or Purpur.
 
 ## Screenshots
+
+The screenshots below show the original v1.0 text display. Current versions show the visual chart instead.
 
 Command help in game:
 
@@ -58,7 +60,8 @@ Commands:
 
 - `/crypto place <coin> [currency]` — place a board on the block you are looking at
 - `/crypto remove` — remove your board from the block you are looking at
-- `/crypto list` — list your boards
+- `/crypto list` — list your boards; click one to teleport to it
+- `/crypto tp <board-id>` — teleport to one of your boards (admins can teleport to any board)
 - `/crypto price <coin> [currency]` — show the cached price
 - `/crypto reload` — reload the configuration (admin permission required)
 
@@ -74,6 +77,7 @@ prices:
   minimum-request-interval-seconds: 60
   request-timeout-seconds: 20
   stale-after-minutes: 10
+  history-retention-days: 7
   retry:
     initial-delay-seconds: 60
     maximum-delay-seconds: 3600
@@ -87,6 +91,7 @@ boards:
     cryptocraft.limit.vip: 3
     cryptocraft.limit.elite: 5
   display-height: 1.35
+  chart-history-hours: 24
 
 api:
   url: "https://api.coingecko.com/api/v3/simple/price"
@@ -112,6 +117,10 @@ default-currency: EUR
 ```
 
 `refresh-interval-seconds` controls automatic polling. `default-currency` is used when a command omits its optional currency argument. `minimum-request-interval-seconds` is a global floor for all requests, including a refresh triggered when a board is placed. Retry delays grow exponentially after HTTP 429 responses and stop growing at `maximum-delay-seconds`. Cached prices are marked stale after `stale-after-minutes`.
+
+Charts show the most recent `boards.chart-history-hours` hours. CryptoCraft samples prices during its existing batched refreshes and retains up to `prices.history-retention-days` days in `plugins/CryptoCraft/history.yml`. No chart-specific API requests are made. A new server starts collecting chart history after the first price refresh; the graph fills in as samples arrive.
+
+Set `language` in `plugins/CryptoCraft/messages.yml` to `en` or `de` to choose English or German command messages. You can edit the language strings in that file and apply changes with `/crypto reload`. Commands provide tab completion for configured coins, currencies, and board IDs.
 
 Set `api.url` to a CoinGecko Simple Price compatible endpoint. The query parameter names for coin IDs and currencies, the optional 24-hour-change and update-time flags, and extra string-valued query parameters can be changed under `api.query`. Coin symbols map to CoinGecko coin IDs under `coins`; currencies are listed under `currencies`.
 

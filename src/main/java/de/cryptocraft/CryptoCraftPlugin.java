@@ -14,11 +14,14 @@ import org.bukkit.scheduler.BukkitTask;
 public final class CryptoCraftPlugin extends JavaPlugin implements Listener {
     private CryptoBoardService boardService;
     private CryptoPriceService priceService;
+    private CryptoMessages messages;
     private BukkitTask refreshTask;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        saveResource("messages.yml", false);
+        messages = new CryptoMessages(this);
         boardService = new CryptoBoardService(this);
         boardService.load();
         priceService = new CryptoPriceService(this, boardService);
@@ -29,7 +32,9 @@ public final class CryptoCraftPlugin extends JavaPlugin implements Listener {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        command.setExecutor(new CryptoCommand(this));
+        CryptoCommand cryptoCommand = new CryptoCommand(this);
+        command.setExecutor(cryptoCommand);
+        command.setTabCompleter(cryptoCommand);
         getServer().getPluginManager().registerEvents(this, this);
 
         boardService.ensureLoadedChunks(priceService);
@@ -56,8 +61,13 @@ public final class CryptoCraftPlugin extends JavaPlugin implements Listener {
         return priceService;
     }
 
+    public CryptoMessages messages() {
+        return messages;
+    }
+
     public void reloadPluginConfiguration() {
         reloadConfig();
+        messages.reload();
         scheduleRefresh();
         boardService.refreshLoadedDisplays(priceService);
         priceService.refresh();

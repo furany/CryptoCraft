@@ -2,8 +2,11 @@ package de.cryptocraft;
 
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -11,14 +14,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
-import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -33,8 +36,10 @@ public final class CryptoPriceService {
 
     private final JavaPlugin plugin;
     private final CryptoBoardService boards;
+    private final File historyFile;
     private final HttpClient http = HttpClient.newHttpClient();
     private final Map<String, Quote> quotes = new ConcurrentHashMap<>();
+    private final Map<String, List<PricePoint>> history = new ConcurrentHashMap<>();
     private final AtomicBoolean inFlight = new AtomicBoolean(false);
     private volatile Instant retryNotBefore = Instant.EPOCH;
     private volatile Instant lastRequestAt = Instant.EPOCH;
@@ -43,36 +48,18 @@ public final class CryptoPriceService {
     public CryptoPriceService(JavaPlugin plugin, CryptoBoardService boards) {
         this.plugin = plugin;
         this.boards = boards;
+        this.historyFile = new File(plugin.getDataFolder(), "history.yml");
         this.backoffSeconds = Math.max(1, plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60));
+        loadHistory();
     }
 
     public Quote getQuote(String coinId, String currency) {
         return quotes.get(coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT));
     }
 
-    public String displayText(CryptoBoard board) {
-        String title = board.symbol() + " / " + board.currency();
-        Quote quote = getQuote(board.coinId(), board.currency());
-        if (quote == null) {
-            return title + "\nLoading price...";
-        }
-
-        NumberFormat number = NumberFormat.getNumberInstance(Locale.US);
-        number.setMinimumFractionDigits(2);
-        number.setMaximumFractionDigits(2);
-        String result = title + "\n" + number.format(quote.price()) + " " + board.currency();
-
-        if (quote.change24h() != null) {
-            DecimalFormat changeFormat = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US));
-            String sign = quote.change24h().signum() > 0 ? "+" : "";
-            result += "\n24h " + sign + changeFormat.format(quote.change24h()) + "%";
-        }
-
-        long staleAfterMinutes = Math.max(0, plugin.getConfig().getLong("prices.stale-after-minutes", 10));
-        if (Duration.between(quote.updatedAt(), Instant.now()).toMinutes() > staleAfterMinutes) {
-            result += "\nPrice data is stale";
-        }
-        return result;
+    public List<PricePoint> getHistory(String coinId, String currency) {
+        return history.getOrDefault(coinId.toLowerCase(Locale.ROOT) + ":"
+                + currency.toLowerCase(Locale.ROOT), List.of());
     }
 
     public void refresh() {
@@ -151,6 +138,7 @@ public final class CryptoPriceService {
 
             http.sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
                 .whenComplete((response, error) -> {
+                    Map<String, Quote> fetchedQuotes = Map.of();
                     try {
                         if (error != null) {
                             plugin.getLogger().log(Level.WARNING, "Price request failed: " + error.getMessage());
@@ -166,7 +154,8 @@ public final class CryptoPriceService {
                                     + "; keeping the last cached prices.");
                             return;
                         }
-                        parseAndStore(response.body(), ids, currencies);
+                        fetchedQuotes = parseAndStore(response.body(), ids, currencies);
+                        quotes.putAll(fetchedQuotes);
                         backoffSeconds = initialBackoffSeconds;
                         retryNotBefore = Instant.EPOCH;
                     } catch (RuntimeException exception) {
@@ -174,7 +163,14 @@ public final class CryptoPriceService {
                     } finally {
                         inFlight.set(false);
                         if (plugin.isEnabled()) {
-                            Bukkit.getScheduler().runTask(plugin, () -> boards.refreshLoadedDisplays(this));
+                            Map<String, Quote> successfulQuotes = fetchedQuotes;
+                            Bukkit.getScheduler().runTask(plugin, () -> {
+                                if (!successfulQuotes.isEmpty()) {
+                                    recordHistory(successfulQuotes);
+                                    saveHistory();
+                                }
+                                boards.refreshLoadedDisplays(this);
+                            });
                         }
                     }
                 });
@@ -225,13 +221,14 @@ public final class CryptoPriceService {
         return result.toString();
     }
 
-    private void parseAndStore(String json, Set<String> ids, Set<String> currencies) {
+    private Map<String, Quote> parseAndStore(String json, Set<String> ids, Set<String> currencies) {
         Map<String, String> objects = new HashMap<>();
         Matcher objectsMatcher = OBJECT.matcher(json);
         while (objectsMatcher.find()) {
             objects.put(objectsMatcher.group(1), objectsMatcher.group(2));
         }
 
+        Map<String, Quote> fetchedQuotes = new HashMap<>();
         for (String id : ids) {
             String values = objects.get(id);
             if (values == null) {
@@ -247,9 +244,107 @@ public final class CryptoPriceService {
                 Instant updated = timestamp == null
                         ? Instant.now()
                         : Instant.ofEpochSecond(timestamp.longValue());
-                quotes.put(id.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT),
+                fetchedQuotes.put(id.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT),
                         new Quote(price, change, updated));
             }
+        }
+        return fetchedQuotes;
+    }
+
+    private void recordHistory(Map<String, Quote> fetchedQuotes) {
+        Instant observedAt = Instant.now();
+        long retentionDays = Math.max(1, Math.min(30,
+                plugin.getConfig().getLong("prices.history-retention-days", 7)));
+        Instant cutoff = observedAt.minus(Duration.ofDays(retentionDays));
+        for (String quoteKey : history.keySet()) {
+            history.computeIfPresent(quoteKey, (key, existing) -> {
+                List<PricePoint> retained = existing.stream()
+                        .filter(point -> !point.observedAt().isBefore(cutoff))
+                        .toList();
+                return retained.isEmpty() ? null : retained;
+            });
+        }
+        for (Map.Entry<String, Quote> entry : fetchedQuotes.entrySet()) {
+            history.compute(entry.getKey(), (key, existing) -> {
+                List<PricePoint> updated = new ArrayList<>(existing == null ? List.of() : existing);
+                updated.removeIf(point -> point.observedAt().isBefore(cutoff));
+                updated.add(new PricePoint(observedAt, entry.getValue().price()));
+                return List.copyOf(updated);
+            });
+        }
+    }
+
+    private void loadHistory() {
+        if (!historyFile.exists()) {
+            return;
+        }
+        YamlConfiguration saved = YamlConfiguration.loadConfiguration(historyFile);
+        ConfigurationSection section = saved.getConfigurationSection("history");
+        if (section == null) {
+            return;
+        }
+
+        long retentionDays = Math.max(1, Math.min(30,
+                plugin.getConfig().getLong("prices.history-retention-days", 7)));
+        Instant cutoff = Instant.now().minus(Duration.ofDays(retentionDays));
+        for (String entryId : section.getKeys(false)) {
+            String base = "history." + entryId + ".";
+            String coinId = saved.getString(base + "coin-id");
+            String currency = saved.getString(base + "currency");
+            if (coinId == null || currency == null) {
+                continue;
+            }
+
+            List<PricePoint> points = new ArrayList<>();
+            for (String encodedPoint : saved.getStringList(base + "points")) {
+                int separator = encodedPoint.indexOf('|');
+                if (separator < 1) {
+                    continue;
+                }
+                try {
+                    Instant observedAt = Instant.ofEpochMilli(Long.parseLong(encodedPoint.substring(0, separator)));
+                    BigDecimal price = new BigDecimal(encodedPoint.substring(separator + 1));
+                    if (!observedAt.isBefore(cutoff)) {
+                        points.add(new PricePoint(observedAt, price));
+                    }
+                } catch (RuntimeException ignored) {
+                    plugin.getLogger().warning("Skipping invalid saved price history point for " + coinId + ".");
+                }
+            }
+
+            if (!points.isEmpty()) {
+                points.sort((left, right) -> left.observedAt().compareTo(right.observedAt()));
+                String quoteKey = coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT);
+                List<PricePoint> loadedPoints = List.copyOf(points);
+                history.put(quoteKey, loadedPoints);
+                PricePoint latest = loadedPoints.get(loadedPoints.size() - 1);
+                quotes.put(quoteKey, new Quote(latest.price(), null, latest.observedAt()));
+            }
+        }
+    }
+
+    private void saveHistory() {
+        YamlConfiguration saved = new YamlConfiguration();
+        for (Map.Entry<String, List<PricePoint>> entry : history.entrySet()) {
+            int separator = entry.getKey().lastIndexOf(':');
+            if (separator < 1) {
+                continue;
+            }
+            String coinId = entry.getKey().substring(0, separator);
+            String currency = entry.getKey().substring(separator + 1);
+            String entryId = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(entry.getKey().getBytes(StandardCharsets.UTF_8));
+            String base = "history." + entryId + ".";
+            saved.set(base + "coin-id", coinId);
+            saved.set(base + "currency", currency);
+            saved.set(base + "points", entry.getValue().stream()
+                    .map(point -> point.observedAt().toEpochMilli() + "|" + point.price().toPlainString())
+                    .toList());
+        }
+        try {
+            saved.save(historyFile);
+        } catch (IOException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Could not save price history.", exception);
         }
     }
 
@@ -272,5 +367,8 @@ public final class CryptoPriceService {
     }
 
     public record Quote(BigDecimal price, BigDecimal change24h, Instant updatedAt) {
+    }
+
+    public record PricePoint(Instant observedAt, BigDecimal price) {
     }
 }
