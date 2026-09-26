@@ -1,9 +1,11 @@
 package de.cryptocraft;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
+import net.md_5.bungee.api.ChatColor;
+import net.md_5.bungee.api.chat.BaseComponent;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -24,7 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class CryptoCommand implements CommandExecutor, TabCompleter {
-    private static final Component PREFIX = Component.text("[CryptoCraft] ", NamedTextColor.GOLD);
+    private static final String PREFIX = "[CryptoCraft] ";
     private final CryptoCraftPlugin plugin;
 
     public CryptoCommand(CryptoCraftPlugin plugin) {
@@ -198,13 +200,15 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
                     "z", String.valueOf(board.z()),
                     "owner", board.ownerName()
             ));
-            Component line = PREFIX.append(Component.text(entry, NamedTextColor.GRAY));
+            BaseComponent line = createMessage(entry);
             if (sender instanceof Player && canTeleport(sender)) {
-                line = line.clickEvent(ClickEvent.runCommand("/crypto tp " + board.id()))
-                        .hoverEvent(HoverEvent.showText(Component.text(
-                                plugin.messages().get("listHover"), NamedTextColor.GOLD)));
+                line.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/crypto tp " + board.id()));
+                line.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                        new ComponentBuilder(plugin.messages().get("listHover"))
+                                .color(ChatColor.GOLD)
+                                .create()));
             }
-            sender.sendMessage(line);
+            sender.spigot().sendMessage(line);
         }
     }
 
@@ -342,7 +346,16 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
     }
 
     private void send(CommandSender sender, String key, Map<String, String> values) {
-        sender.sendMessage(PREFIX.append(Component.text(plugin.messages().get(key, values), NamedTextColor.GRAY)));
+        sender.spigot().sendMessage(createMessage(plugin.messages().get(key, values)));
+    }
+
+    private BaseComponent createMessage(String content) {
+        TextComponent line = new TextComponent(PREFIX);
+        line.setColor(ChatColor.GOLD);
+        TextComponent message = new TextComponent(content);
+        message.setColor(ChatColor.GRAY);
+        line.addExtra(message);
+        return line;
     }
 
     private List<CryptoBoard> getVisibleBoards(Player player) {

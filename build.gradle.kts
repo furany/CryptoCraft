@@ -5,14 +5,16 @@ plugins {
 group = "de.cryptocraft"
 version = "1.0.0"
 
-val paperVersion = providers.gradleProperty("paperVersion").orElse("26.3.build.+").get()
+val spigotVersion = providers.gradleProperty("spigotVersion").orElse("26.3-R0.1-SNAPSHOT").get()
 
 repositories {
-    maven("https://repo.papermc.io/repository/maven-public/")
+    mavenCentral()
+    maven("https://hub.spigotmc.org/nexus/content/repositories/snapshots/")
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:" + paperVersion)
+    compileOnly("org.spigotmc:spigot-api:" + spigotVersion)
+    compileOnly("net.md-5:bungeecord-chat:1.21-R0.4")
 }
 
 java {

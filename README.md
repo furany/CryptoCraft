@@ -2,13 +2,13 @@
 
 ![CryptoCraft banner: live cryptocurrency prices on in-game boards](assets/cryptocraft-banner.png)
 
-CryptoCraft displays a visual cryptocurrency price chart above ordinary Minecraft blocks on Paper and Purpur. The block remains a normal vanilla block, so players can still interact with it as usual. The chart uses a plugin-rendered map in an invisible, fixed item frame; it is removed when the anchor block is broken and never drops as a map item or frame.
+CryptoCraft displays a visual cryptocurrency price chart above ordinary Minecraft blocks on Spigot, Paper, and Purpur. The block remains a normal vanilla block, so players can still interact with it as usual. The chart uses a plugin-rendered map in an invisible, fixed item frame; it is removed when the anchor block is broken and never drops as a map item or frame.
 
 [![Build](https://github.com/furany/CryptoCraft/actions/workflows/build.yml/badge.svg)](https://github.com/furany/CryptoCraft/actions/workflows/build.yml)
 
 ## Download
 
-Download the latest compiled plugin JAR from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place it in your server's `plugins` directory and restart Paper or Purpur.
+Download the latest compiled plugin JAR from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place it in your server's `plugins` directory and restart the server.
 
 ## In-game screenshot
 
@@ -18,7 +18,7 @@ Current chart overview showing BTC/EUR, SOL/EUR, and ETH/EUR boards:
 
 ## Requirements
 
-- Paper or Purpur 26.3
+- Spigot, Paper, or Purpur 26.3
 - Java 25
 - Gradle (for local builds)
 
