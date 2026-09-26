@@ -10,17 +10,11 @@ CryptoCraft displays a visual cryptocurrency price chart above ordinary Minecraf
 
 Download the latest compiled plugin JAR from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place it in your server's `plugins` directory and restart Paper or Purpur.
 
-## Screenshots
+## In-game screenshot
 
-The screenshots below show the original v1.0 text display. Current versions show the visual chart instead.
+Current chart overview showing BTC/EUR, SOL/EUR, and ETH/EUR boards:
 
-Command help in game:
-
-![CryptoCraft command help in Minecraft](screenshots/command-help.png)
-
-BTC/EUR price board in game:
-
-![CryptoCraft BTC/EUR price board in Minecraft](screenshots/btc-eur-board.png)
+![CryptoCraft in-game chart overview](screenshots/crypto-charts.png)
 
 ## Requirements
 
@@ -56,14 +50,18 @@ Look at a vanilla block and run:
 
 The board appears above that block. Its normal use is unchanged. Breaking the anchor block removes the board and frees the owner's slot. `/crypto remove` removes only the floating display and leaves the block in place.
 
+Run `/crypto` for help. `/cryptocraft` is an alias for `/crypto`.
+
 Commands:
 
-- `/crypto place <coin> [currency]` — place a board on the block you are looking at
-- `/crypto remove` — remove your board from the block you are looking at
-- `/crypto list` — list your boards; users with teleport permission can click one to teleport
-- `/crypto tp <board-id>` — teleport to one of your boards (admins can teleport to any board)
-- `/crypto price <coin> [currency]` — show the cached price
-- `/crypto reload` — reload the configuration (admin permission required)
+- `/crypto place <coin> [currency]` — place a chart above the block you are looking at. Currency is optional and defaults to EUR.
+- `/crypto remove` — remove your chart from the block you are looking at; admins can remove any chart.
+- `/crypto list` — list your charts. Admins see all charts; players see their own. Players with teleport permission can click an entry to teleport.
+- `/crypto tp <board-id>` — teleport to one of your charts. Requires `cryptocraft.teleport`; admins can teleport to any chart.
+- `/crypto price <coin> [currency]` — show the cached price for a configured coin.
+- `/crypto reload` — reload the plugin configuration and messages; requires the configured admin permission.
+
+Tab completion suggests configured coins, currencies, and board IDs you can access.
 
 BTC, ETH, and SOL are configured by default. EUR is the default currency; EUR, USD, and TRY (Turkish lira) are available. For example, use `/crypto place BTC USD` for the Bitcoin price in US dollars or `/crypto place BTC TRY` for Turkish lira. All active boards share one price request per refresh interval.
 
@@ -120,7 +118,7 @@ default-currency: EUR
 
 Charts show up to the most recent `boards.chart-history-hours` hours. The plot uses the collected history across the full graph width while data is warming up; its footer shows collected time versus the selected window and the number of samples. The left axis labels price, the bottom axis labels time, and the shaded line highlights the recent price movement. The header shows the latest price and 24-hour change. CryptoCraft samples prices during its existing batched refreshes and retains up to `prices.history-retention-days` days in `plugins/CryptoCraft/history.yml`. No chart-specific API requests are made.
 
-Set `language` in `plugins/CryptoCraft/messages.yml` to `en` or `de` to choose English or German command messages. You can edit the language strings in that file and apply changes with `/crypto reload`. Commands provide tab completion for configured coins, currencies, and board IDs.
+Set `language` in `plugins/CryptoCraft/messages.yml` to `en` or `de` to choose English or German command and chart messages. You can edit the language strings in that file and apply changes with `/crypto reload`.
 
 Set `api.url` to a CoinGecko Simple Price compatible endpoint. The query parameter names for coin IDs and currencies, the optional 24-hour-change and update-time flags, and extra string-valued query parameters can be changed under `api.query`. Coin symbols map to CoinGecko coin IDs under `coins`; currencies are listed under `currencies`.
 
