@@ -79,6 +79,8 @@ prices:
   retry:
     initial-delay-seconds: 60
     maximum-delay-seconds: 3600
+    access-error-initial-delay-seconds: 900
+    access-error-maximum-delay-seconds: 3600
 
 boards:
   default-limit-per-player: 1
@@ -93,7 +95,9 @@ boards:
 
 api:
   url: "https://api.coingecko.com/api/v3/simple/price"
+  auth-mode: demo
   demo-key: ""
+  pro-key: ""
   query:
     coin-ids-parameter: ids
     currencies-parameter: vs_currencies
@@ -114,7 +118,9 @@ currencies:
 default-currency: EUR
 ```
 
-`refresh-interval-seconds` controls automatic polling. `default-currency` is used when a command omits its optional currency argument. `minimum-request-interval-seconds` is a global floor for all requests, including a refresh triggered when a board is placed. Retry delays grow exponentially after HTTP 429 responses and stop growing at `maximum-delay-seconds`. Cached prices are marked stale after `stale-after-minutes`.
+`refresh-interval-seconds` controls automatic polling. `default-currency` is used when a command omits its optional currency argument. `minimum-request-interval-seconds` is a global floor for all requests, including a refresh triggered when a board is placed. HTTP 429 retries honor `Retry-After` and use exponential backoff up to `maximum-delay-seconds`. HTTP 401/403 responses use a separate, longer backoff configured by `access-error-initial-delay-seconds` and `access-error-maximum-delay-seconds`; repeated warnings for the same status are suppressed until the status changes, the API recovers, or `/crypto reload` is run. Error details are shortened and API keys are redacted from logs.
+
+After `stale-after-minutes` without a fresh quote, the chart replaces its 24-hour change with an orange `STALE` label and the quote age (`ALT` in German). The cached price remains visible while the API is unavailable.
 
 Charts show up to the most recent `boards.chart-history-hours` hours. The plot uses the collected history across the full graph width while data is warming up; its footer shows collected time versus the selected window and the number of samples. The left axis labels price, the bottom axis labels time, and the shaded line highlights the recent price movement. The header shows the latest price and 24-hour change. CryptoCraft samples prices during its existing batched refreshes and retains up to `prices.history-retention-days` days in `plugins/CryptoCraft/history.yml`. No chart-specific API requests are made.
 
@@ -142,6 +148,8 @@ The plugin uses Bukkit permissions directly and has no API dependency on LuckPer
 
 ## CoinGecko API
 
-With an empty `api.demo-key`, CryptoCraft uses CoinGecko's keyless Public API. CoinGecko documents a dynamic shared limit of roughly 10–30 calls per minute per public IP, but says the keyless API is not intended for scheduled polling in production. CryptoCraft batches all active boards into one request every five minutes by default and backs off after HTTP 429 responses. Servers sharing one public IP also share CoinGecko's IP-based limit. For more reliable polling, set a Demo API key in `api.demo-key`.
+With `api.auth-mode: demo`, CryptoCraft sends `api.demo-key` using the Demo API header. If the key is empty, it uses CoinGecko's keyless Public API. For a paid plan, set `api.auth-mode: pro` and provide `api.pro-key`; the plugin uses the Pro API header and switches the default endpoint to `pro-api.coingecko.com`. A custom `api.url` is left unchanged in either mode. The plugin sends a descriptive User-Agent and logs a shortened API error response plus a request ID when available.
+
+CoinGecko distinguishes access-denied HTTP 403 errors from HTTP 429 rate limiting. A valid Demo key may help with public API access; a 403 can also require CoinGecko to unblock the server's outbound IP. CryptoCraft keeps the last cached prices during errors.
 
 See CoinGecko's [keyless Public API documentation](https://docs.coingecko.com/docs/keyless-public-api) for current limits and usage guidance.

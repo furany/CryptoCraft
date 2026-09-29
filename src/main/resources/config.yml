@@ -5,12 +5,16 @@ prices:
   # Global minimum delay between requests, including refreshes triggered by commands.
   minimum-request-interval-seconds: 60
   request-timeout-seconds: 20
+  # Show an old-price marker on charts after this long without a fresh quote.
   stale-after-minutes: 10
   # Keep sampled prices for this many days so boards can draw history charts.
   history-retention-days: 7
   retry:
     initial-delay-seconds: 60
     maximum-delay-seconds: 3600
+    # Authentication or IP denials are less likely to clear quickly than rate limits.
+    access-error-initial-delay-seconds: 900
+    access-error-maximum-delay-seconds: 3600
 
 boards:
   # Number of boards allowed per player without a special permission.
@@ -30,8 +34,12 @@ boards:
 api:
   # CoinGecko Simple Price API or a compatible endpoint.
   url: "https://api.coingecko.com/api/v3/simple/price"
+  # Choose "demo" or "pro". Pro mode switches the default endpoint to pro-api.coingecko.com.
+  auth-mode: demo
   # Optional. Leave empty to use CoinGecko's keyless Public API.
   demo-key: ""
+  # Required when auth-mode is "pro".
+  pro-key: ""
   query:
     coin-ids-parameter: ids
     currencies-parameter: vs_currencies

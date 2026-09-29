@@ -39,8 +39,14 @@ public final class CryptoCraftPlugin extends JavaPlugin implements Listener {
 
         boardService.ensureLoadedChunks(priceService);
         scheduleRefresh();
-        String demoKey = getConfig().getString("api.demo-key");
-        if (demoKey == null || demoKey.isBlank()) {
+        String authMode = getConfig().getString("api.auth-mode", "demo");
+        String proKey = getConfig().getString("api.pro-key", "");
+        String demoKey = getConfig().getString("api.demo-key", "");
+        if (authMode != null && authMode.equalsIgnoreCase("pro")
+                && (proKey == null || proKey.isBlank())) {
+            getLogger().warning("CoinGecko Pro mode is selected, but api.pro-key is empty.");
+        } else if ((authMode == null || authMode.equalsIgnoreCase("demo"))
+                && (demoKey == null || demoKey.isBlank())) {
             getLogger().warning("Using CoinGecko's keyless API. A Demo API key may make regular polling more reliable.");
         }
         priceService.refresh();
@@ -68,6 +74,7 @@ public final class CryptoCraftPlugin extends JavaPlugin implements Listener {
     public void reloadPluginConfiguration() {
         reloadConfig();
         messages.reload();
+        priceService.resetRetryState();
         scheduleRefresh();
         boardService.refreshLoadedDisplays(priceService);
         priceService.refresh();

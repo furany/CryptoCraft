@@ -25,15 +25,18 @@ public final class CryptoMessages {
     }
 
     public String get(String key, Map<String, String> values) {
-        String configuredLanguage = messages.getString("language", "en");
-        String language = configuredLanguage == null || configuredLanguage.isBlank()
-                ? "en"
-                : configuredLanguage.trim().toLowerCase(Locale.ROOT);
-        String path = "languages." + language + "." + key;
+        String path = "languages." + getLanguage() + "." + key;
         String text = messages.getString(path, messages.getString("languages.en." + key, key));
         for (Map.Entry<String, String> value : values.entrySet()) {
             text = text.replace("%" + value.getKey() + "%", value.getValue());
         }
         return text;
+    }
+
+    public String getLanguage() {
+        String configuredLanguage = messages.getString("language", "en");
+        return configuredLanguage == null || configuredLanguage.isBlank()
+                ? "en"
+                : configuredLanguage.trim().toLowerCase(Locale.ROOT);
     }
 }

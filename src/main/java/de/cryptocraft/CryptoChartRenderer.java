@@ -34,6 +34,7 @@ public final class CryptoChartRenderer extends MapRenderer {
     private static final Color GRID = new Color(40, 51, 67);
     private static final Color UP = new Color(36, 190, 125);
     private static final Color DOWN = new Color(229, 77, 85);
+    private static final Color STALE_TEXT = new Color(247, 177, 61);
     private static final Color NEUTRAL = new Color(87, 159, 220);
     private static final Color TEXT = new Color(224, 231, 240);
     private static final Color MUTED_TEXT = new Color(153, 169, 188);
@@ -112,7 +113,14 @@ public final class CryptoChartRenderer extends MapRenderer {
             String loading = plugin.messages().get("chartLoading");
             graphics.drawString(loading, PLOT_RIGHT - graphics.getFontMetrics().stringWidth(loading), 10);
         } else {
-            if (quote.change24h() != null) {
+            if (isStale(quote)) {
+                long ageMinutes = Math.max(0, Duration.between(quote.updatedAt(), Instant.now()).toMinutes());
+                String staleLabel = (plugin.messages().getLanguage().equals("de") ? "ALT " : "STALE ")
+                        + formatAge(ageMinutes);
+                graphics.setColor(STALE_TEXT);
+                graphics.drawString(staleLabel,
+                        PLOT_RIGHT - graphics.getFontMetrics().stringWidth(staleLabel), 10);
+            } else if (quote.change24h() != null) {
                 String sign = quote.change24h().signum() > 0 ? "+" : "";
                 String change = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US))
                         .format(quote.change24h());
@@ -297,6 +305,27 @@ public final class CryptoChartRenderer extends MapRenderer {
     private int getChartHistoryHours() {
         return Math.max(1, Math.min(168,
                 plugin.getConfig().getInt("boards.chart-history-hours", 24)));
+    }
+
+    private boolean isStale(CryptoPriceService.Quote quote) {
+        long staleAfterMinutes = Math.max(1,
+                plugin.getConfig().getLong("prices.stale-after-minutes", 10));
+        return Duration.between(quote.updatedAt(), Instant.now())
+                .compareTo(Duration.ofMinutes(staleAfterMinutes)) >= 0;
+    }
+
+    private String formatAge(long minutes) {
+        if (minutes < 60) {
+            return minutes + "m";
+        }
+        if (minutes < 1440) {
+            long hours = minutes / 60;
+            long remainingMinutes = minutes % 60;
+            return remainingMinutes == 0 ? hours + "h" : hours + "h" + remainingMinutes + "m";
+        }
+        long days = minutes / 1440;
+        long remainingHours = minutes % 1440 / 60;
+        return remainingHours == 0 ? days + "d" : days + "d" + remainingHours + "h";
     }
 
     private String formatDuration(int minutes) {
