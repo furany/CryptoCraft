@@ -9,6 +9,13 @@ prices:
   stale-after-minutes: 10
   # Keep sampled prices for this many days so boards can draw history charts.
   history-retention-days: 7
+  # Optional initial history import. Shares the global request floor and backoff.
+  backfill:
+    enabled: false
+    days: 7
+    maximum-requests-per-hour: 6
+    # Leave empty for CoinGecko. A custom compatible provider must set this explicitly.
+    url: ""
   retry:
     initial-delay-seconds: 60
     maximum-delay-seconds: 3600
@@ -60,3 +67,23 @@ currencies:
 
 # Currency used when a command omits its optional currency argument.
 default-currency: EUR
+
+# Per-player features are persisted in players.yml.
+players:
+  watchlist-limit: 20
+  alarm-limit: 20
+  alarm-cooldown-seconds: 300
+  # Signals use an existing lever directly above a board's anchor.
+  redstone-enabled: true
+
+# Paper trading with virtual cash, independent of real wallets and Vault.
+portfolio:
+  enabled: false
+  currency: EUR
+  starting-cash: "10000"
+
+integrations:
+  worldguard: true
+  placeholderapi: true
+  # Request all configured pairs for scoreboards even when no board/watchlist exists.
+  placeholderapi-preload: false

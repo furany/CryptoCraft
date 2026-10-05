@@ -3,10 +3,8 @@ package de.cryptocraft;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -16,37 +14,36 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.logging.Level;
+import java.util.regex.Pattern;
 
 public final class CryptoPriceService {
-    private static final Pattern OBJECT = Pattern.compile("\"([^\"]+)\"\\s*:\\s*\\{([^{}]*)\\}");
     private static final String DEMO_ENDPOINT = "https://api.coingecko.com/api/v3/simple/price";
     private static final String PRO_ENDPOINT = "https://pro-api.coingecko.com/api/v3/simple/price";
     private static final int MAX_ERROR_DETAIL_LENGTH = 280;
-    private static final Pattern SENSITIVE_QUERY_PARAMETER = Pattern.compile(
-            "(?i)([?&][^&=]*(?:key|token|secret)[^&=]*=)[^&\\s)]+");
+    private static final Pattern SENSITIVE_QUERY_PARAMETER =
+            Pattern.compile("(?i)([?&][^&=]*(?:key|token|secret)[^&=]*=)[^&\\s)]+");
 
-    private final JavaPlugin plugin;
+    private final CryptoCraftPlugin plugin;
     private final CryptoBoardService boards;
     private final File historyFile;
-    private final HttpClient http = HttpClient.newHttpClient();
+    private final HttpClient http;
     private final Map<String, Quote> quotes = new ConcurrentHashMap<>();
     private final Map<String, List<PricePoint>> history = new ConcurrentHashMap<>();
     private final AtomicBoolean inFlight = new AtomicBoolean(false);
@@ -57,30 +54,60 @@ public final class CryptoPriceService {
     private volatile long serverErrorBackoffSeconds = 60;
     private volatile String lastLoggedFailure;
     private volatile boolean apiConfigurationWarningLogged;
+    private volatile Instant lastSuccessAt = Instant.EPOCH;
+    private long historyRevision;
 
-    public CryptoPriceService(JavaPlugin plugin, CryptoBoardService boards) {
+    public long historyRevision() {
+        return historyRevision;
+    }
+
+    private volatile long staleMinutes = 10;
+    private final Map<String, Instant> demand = new HashMap<>();
+    private final Set<String> backfilled = new HashSet<>();
+    private final Map<String, Instant> backfillRetry = new HashMap<>();
+    private final Deque<Instant> backfillRequests = new ArrayDeque<>();
+    private Instant lastPriceRequestAt = Instant.EPOCH;
+    private java.util.concurrent.CompletableFuture<HttpResponse<String>> request;
+    private int generation;
+    private volatile boolean closed;
+
+    public CryptoPriceService(CryptoCraftPlugin plugin, CryptoBoardService boards) {
+        this(plugin, boards, HttpClient.newHttpClient());
+    }
+
+    CryptoPriceService(CryptoCraftPlugin plugin, CryptoBoardService boards, HttpClient http) {
         this.plugin = plugin;
         this.boards = boards;
+        this.http = http;
         this.historyFile = new File(plugin.getDataFolder(), "history.yml");
         resetRetryState();
-        loadHistory();
+        try {
+            loadHistory();
+        } catch (RuntimeException error) {
+            http.shutdownNow();
+            throw error;
+        }
     }
 
     public Quote getQuote(String coinId, String currency) {
-        return quotes.get(coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT));
+        return quotes.get(
+                coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT));
     }
 
     public List<PricePoint> getHistory(String coinId, String currency) {
-        return history.getOrDefault(coinId.toLowerCase(Locale.ROOT) + ":"
-                + currency.toLowerCase(Locale.ROOT), List.of());
+        return history.getOrDefault(
+                coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT),
+                List.of());
     }
 
     public void refresh() {
+        if (closed) return;
         Instant now = Instant.now();
-        long minimumRequestInterval = Math.max(0,
-                plugin.getConfig().getLong("prices.minimum-request-interval-seconds", 60));
+        long minimumRequestInterval =
+                Math.max(
+                        0,
+                        plugin.getConfig().getLong("prices.minimum-request-interval-seconds", 60));
         if (now.isBefore(retryNotBefore)) {
-            boards.refreshLoadedDisplays(this);
             return;
         }
         if (Duration.between(lastRequestAt, now).toSeconds() < minimumRequestInterval
@@ -88,8 +115,8 @@ public final class CryptoPriceService {
             return;
         }
 
-        var activeBoards = boards.getBoards();
-        if (activeBoards.isEmpty()) {
+        Set<String> pairs = desiredPairs();
+        if (pairs.isEmpty()) {
             inFlight.set(false);
             return;
         }
@@ -109,16 +136,20 @@ public final class CryptoPriceService {
 
         Set<String> ids = new LinkedHashSet<>();
         Set<String> currencies = new LinkedHashSet<>();
-        activeBoards.forEach(board -> {
-            ids.add(board.coinId());
-            currencies.add(board.currency().toLowerCase(Locale.ROOT));
-        });
+        for (String pair : pairs) {
+            int separator = pair.lastIndexOf(':');
+            ids.add(pair.substring(0, separator));
+            currencies.add(pair.substring(separator + 1));
+        }
+        lastPriceRequestAt = now;
 
         try {
             String baseUrl = getEndpoint(authMode);
-            ConfigurationSection queryConfig = plugin.getConfig().getConfigurationSection("api.query");
+            ConfigurationSection queryConfig =
+                    plugin.getConfig().getConfigurationSection("api.query");
             String idsParameter = getQueryParameterName(queryConfig, "coin-ids-parameter", "ids");
-            String currenciesParameter = getQueryParameterName(queryConfig, "currencies-parameter", "vs_currencies");
+            String currenciesParameter =
+                    getQueryParameterName(queryConfig, "currencies-parameter", "vs_currencies");
             Map<String, String> queryParameters = new LinkedHashMap<>();
             if (!idsParameter.isEmpty()) {
                 queryParameters.put(idsParameter, String.join(",", ids));
@@ -132,8 +163,8 @@ public final class CryptoPriceService {
             if (plugin.getConfig().getBoolean("api.query.include-last-updated-at", true)) {
                 queryParameters.put("include_last_updated_at", "true");
             }
-            ConfigurationSection additionalParameters = plugin.getConfig()
-                .getConfigurationSection("api.query.additional-parameters");
+            ConfigurationSection additionalParameters =
+                    plugin.getConfig().getConfigurationSection("api.query.additional-parameters");
             if (additionalParameters != null) {
                 for (String name : additionalParameters.getKeys(false)) {
                     Object rawValue = additionalParameters.getValues(false).get(name);
@@ -145,68 +176,80 @@ public final class CryptoPriceService {
             }
 
             String url = appendQuery(baseUrl, queryParameters);
-            long requestTimeoutSeconds = Math.max(1,
-                    plugin.getConfig().getLong("prices.request-timeout-seconds", 20));
-            long initialBackoffSeconds = Math.max(1,
-                    plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60));
-            long maximumBackoffSeconds = Math.max(initialBackoffSeconds,
-                    plugin.getConfig().getLong("prices.retry.maximum-delay-seconds", 3600));
-            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(requestTimeoutSeconds))
-                    .header("Accept", "application/json")
-                    .header("User-Agent", "CryptoCraft/" + plugin.getDescription().getVersion()
-                            + " (+https://github.com/furany/CryptoCraft)")
-                    .GET();
+            long requestTimeoutSeconds =
+                    Math.max(1, plugin.getConfig().getLong("prices.request-timeout-seconds", 20));
+            long initialBackoffSeconds =
+                    Math.max(
+                            1,
+                            plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60));
+            long maximumBackoffSeconds =
+                    Math.max(
+                            initialBackoffSeconds,
+                            plugin.getConfig().getLong("prices.retry.maximum-delay-seconds", 3600));
+            HttpRequest.Builder requestBuilder =
+                    HttpRequest.newBuilder(URI.create(url))
+                            .timeout(Duration.ofSeconds(requestTimeoutSeconds))
+                            .header("Accept", "application/json")
+                            .header(
+                                    "User-Agent",
+                                    "CryptoCraft/"
+                                            + plugin.getDescription().getVersion()
+                                            + " (+https://github.com/furany/CryptoCraft)")
+                            .GET();
             if (!apiKey.isEmpty()) {
-                requestBuilder.header("pro".equals(authMode) ? "x-cg-pro-api-key" : "x-cg-demo-api-key", apiKey);
+                requestBuilder.header(
+                        "pro".equals(authMode) ? "x-cg-pro-api-key" : "x-cg-demo-api-key", apiKey);
             }
 
-            http.sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
-                .whenComplete((response, error) -> {
-                    Map<String, Quote> fetchedQuotes = Map.of();
-                    try {
-                        if (error != null) {
-                            long delay = applyServerErrorBackoff(initialBackoffSeconds, maximumBackoffSeconds);
-                            logTransportFailure(error, delay);
-                            return;
-                        }
-                        if (response.statusCode() == 429) {
-                            long delay = applyRateLimitBackoff(response, initialBackoffSeconds,
-                                    maximumBackoffSeconds);
-                            logHttpFailure(response, delay);
-                            return;
-                        }
-                        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                            long delay = response.statusCode() == 401 || response.statusCode() == 403
-                                    ? applyAccessErrorBackoff()
-                                    : applyServerErrorBackoff(initialBackoffSeconds, maximumBackoffSeconds);
-                            logHttpFailure(response, delay);
-                            return;
-                        }
-                        fetchedQuotes = parseAndStore(response.body(), ids, currencies);
-                        quotes.putAll(fetchedQuotes);
-                        resetBackoffDelays();
-                        String previousFailure = lastLoggedFailure;
-                        lastLoggedFailure = null;
-                        if (previousFailure != null) {
-                            plugin.getLogger().info("Price API recovered after " + previousFailure + ".");
-                        }
-                    } catch (RuntimeException exception) {
-                        plugin.getLogger().log(Level.WARNING, "Could not process the price response.", exception);
-                    } finally {
-                        inFlight.set(false);
-                        if (plugin.isEnabled()) {
-                            Map<String, Quote> successfulQuotes = fetchedQuotes;
-                            Bukkit.getScheduler().runTask(plugin, () -> {
-                                if (!successfulQuotes.isEmpty()) {
-                                    recordHistory(successfulQuotes);
-                                    saveHistory();
-                                }
-                                boards.refreshLoadedDisplays(this);
-                            });
-                        }
-                    }
-                });
+            int version = generation;
+            request = http.sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            request.whenComplete(
+                    (response, error) ->
+                            onMain(
+                                    () -> {
+                                        if (version != generation || closed) return;
+                                        try {
+                                            if (!acceptResponse(
+                                                    response,
+                                                    error,
+                                                    initialBackoffSeconds,
+                                                    maximumBackoffSeconds)) return;
+                                            Map<String, Quote> fetched =
+                                                    QuoteCodec.prices(
+                                                            response.body(),
+                                                            ids,
+                                                            currencies,
+                                                            Instant.now());
+                                            Map<String, Quote> accepted = new HashMap<>();
+                                            fetched.forEach(
+                                                    (key, quote) -> {
+                                                        Quote current = quotes.get(key);
+                                                        if (current == null
+                                                                || !quote.updatedAt()
+                                                                        .isBefore(
+                                                                                current
+                                                                                        .updatedAt())) {
+                                                            quotes.put(key, quote);
+                                                            accepted.put(key, quote);
+                                                        }
+                                                    });
+                                            recordHistory(accepted);
+                                            saveHistory();
+                                            lastSuccessAt = Instant.now();
+                                            recovered();
+                                            if (plugin.features() != null)
+                                                plugin.features().evaluate(accepted);
+                                        } catch (RuntimeException exception) {
+                                            long delay =
+                                                    applyServerErrorBackoff(
+                                                            initialBackoffSeconds,
+                                                            maximumBackoffSeconds);
+                                            logTransportFailure(exception, delay);
+                                        } finally {
+                                            inFlight.set(false);
+                                            boards.refreshLoadedDisplays(this);
+                                        }
+                                    }));
         } catch (RuntimeException exception) {
             inFlight.set(false);
             plugin.getLogger().log(Level.WARNING, "Could not start the price request.", exception);
@@ -214,6 +257,10 @@ public final class CryptoPriceService {
     }
 
     public void resetRetryState() {
+        generation++;
+        if (request != null) request.cancel(true);
+        inFlight.set(false);
+        staleMinutes = Math.max(1, plugin.getConfig().getLong("prices.stale-after-minutes", 10));
         retryNotBefore = Instant.EPOCH;
         resetBackoffDelays();
         lastLoggedFailure = null;
@@ -221,39 +268,52 @@ public final class CryptoPriceService {
     }
 
     private void resetBackoffDelays() {
-        rateLimitBackoffSeconds = Math.max(1,
-                plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60));
-        accessErrorBackoffSeconds = Math.max(1,
-                plugin.getConfig().getLong("prices.retry.access-error-initial-delay-seconds", 900));
-        serverErrorBackoffSeconds = Math.max(1,
-                plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60));
+        rateLimitBackoffSeconds =
+                Math.max(1, plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60));
+        accessErrorBackoffSeconds =
+                Math.max(
+                        1,
+                        plugin.getConfig()
+                                .getLong("prices.retry.access-error-initial-delay-seconds", 900));
+        serverErrorBackoffSeconds =
+                Math.max(1, plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60));
         retryNotBefore = Instant.EPOCH;
     }
 
-    private long applyRateLimitBackoff(HttpResponse<?> response, long initialBackoffSeconds,
-                                       long maximumBackoffSeconds) {
-        long retryAfterSeconds = response.headers().firstValue("Retry-After")
-                .flatMap(this::parseRetryAfterSeconds)
-                .orElse(rateLimitBackoffSeconds);
-        long delaySeconds = Math.max(1, Math.min(maximumBackoffSeconds, retryAfterSeconds));
+    private long applyRateLimitBackoff(
+            HttpResponse<?> response, long initialBackoffSeconds, long maximumBackoffSeconds) {
+        var retryAfterSeconds =
+                response.headers().firstValue("Retry-After").flatMap(this::parseRetryAfterSeconds);
+        long delaySeconds =
+                RetryPolicy.delay(
+                        rateLimitBackoffSeconds, maximumBackoffSeconds, retryAfterSeconds);
         retryNotBefore = Instant.now().plusSeconds(delaySeconds);
-        rateLimitBackoffSeconds = nextBackoff(delaySeconds, initialBackoffSeconds, maximumBackoffSeconds);
+        rateLimitBackoffSeconds =
+                nextBackoff(delaySeconds, initialBackoffSeconds, maximumBackoffSeconds);
         return delaySeconds;
     }
 
     private long applyAccessErrorBackoff() {
-        long initialDelay = Math.max(1,
-                plugin.getConfig().getLong("prices.retry.access-error-initial-delay-seconds", 900));
-        long maximumDelay = Math.max(initialDelay,
-                plugin.getConfig().getLong("prices.retry.access-error-maximum-delay-seconds", 3600));
-        long delaySeconds = Math.max(initialDelay, Math.min(accessErrorBackoffSeconds, maximumDelay));
+        long initialDelay =
+                Math.max(
+                        1,
+                        plugin.getConfig()
+                                .getLong("prices.retry.access-error-initial-delay-seconds", 900));
+        long maximumDelay =
+                Math.max(
+                        initialDelay,
+                        plugin.getConfig()
+                                .getLong("prices.retry.access-error-maximum-delay-seconds", 3600));
+        long delaySeconds =
+                Math.max(initialDelay, Math.min(accessErrorBackoffSeconds, maximumDelay));
         retryNotBefore = Instant.now().plusSeconds(delaySeconds);
         accessErrorBackoffSeconds = nextBackoff(delaySeconds, initialDelay, maximumDelay);
         return delaySeconds;
     }
 
     private long applyServerErrorBackoff(long initialDelay, long maximumDelay) {
-        long delaySeconds = Math.max(initialDelay, Math.min(serverErrorBackoffSeconds, maximumDelay));
+        long delaySeconds =
+                Math.max(initialDelay, Math.min(serverErrorBackoffSeconds, maximumDelay));
         retryNotBefore = Instant.now().plusSeconds(delaySeconds);
         serverErrorBackoffSeconds = nextBackoff(delaySeconds, initialDelay, maximumDelay);
         return delaySeconds;
@@ -265,17 +325,7 @@ public final class CryptoPriceService {
     }
 
     private java.util.Optional<Long> parseRetryAfterSeconds(String value) {
-        String retryAfter = value.trim();
-        try {
-            return java.util.Optional.of(Long.parseLong(retryAfter));
-        } catch (NumberFormatException ignored) {
-            try {
-                Instant retryAt = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
-                return java.util.Optional.of(Duration.between(Instant.now(), retryAt).getSeconds());
-            } catch (DateTimeParseException ignoredDate) {
-                return java.util.Optional.empty();
-            }
-        }
+        return RetryPolicy.retryAfter(value, Instant.now());
     }
 
     private void logHttpFailure(HttpResponse<String> response, long delaySeconds) {
@@ -286,13 +336,13 @@ public final class CryptoPriceService {
         }
         lastLoggedFailure = failureId;
 
-        StringBuilder message = new StringBuilder("Price API returned HTTP ")
-                .append(status);
+        StringBuilder message = new StringBuilder("Price API returned HTTP ").append(status);
         String detail = sanitizeErrorDetail(response.body());
         if (!detail.isBlank()) {
             message.append(" (response: ").append(detail).append(')');
         }
-        response.headers().firstValue("cf-ray")
+        response.headers()
+                .firstValue("cf-ray")
                 .or(() -> response.headers().firstValue("x-request-id"))
                 .map(this::sanitizeHeaderValue)
                 .filter(value -> !value.isBlank())
@@ -300,7 +350,9 @@ public final class CryptoPriceService {
         if (status == 401 || status == 403) {
             message.append("; check API key type, endpoint, and server IP");
         }
-        message.append("; keeping cached prices. Next attempt in ").append(formatDelay(delaySeconds)).append('.');
+        message.append("; keeping cached prices. Next attempt in ")
+                .append(formatDelay(delaySeconds))
+                .append('.');
         plugin.getLogger().warning(message.toString());
     }
 
@@ -310,9 +362,12 @@ public final class CryptoPriceService {
         }
         lastLoggedFailure = "network request failure";
         String detail = sanitizeErrorDetail(error.getMessage());
-        String message = "Price request failed"
-                + (detail.isBlank() ? "" : " (" + detail + ")")
-                + "; keeping cached prices. Next attempt in " + formatDelay(delaySeconds) + ".";
+        String message =
+                "Price request failed"
+                        + (detail.isBlank() ? "" : " (" + detail + ")")
+                        + "; keeping cached prices. Next attempt in "
+                        + formatDelay(delaySeconds)
+                        + ".";
         plugin.getLogger().warning(message);
     }
 
@@ -329,7 +384,7 @@ public final class CryptoPriceService {
             }
         }
         if (detail.length() > MAX_ERROR_DETAIL_LENGTH) {
-            return detail.substring(0, MAX_ERROR_DETAIL_LENGTH) + "…";
+            return detail.substring(0, MAX_ERROR_DETAIL_LENGTH) + "â€¦";
         }
         return detail;
     }
@@ -367,10 +422,13 @@ public final class CryptoPriceService {
 
     private String authenticationConfigurationError(String authMode, String apiKey) {
         if (!"demo".equals(authMode) && !"pro".equals(authMode)) {
-            return "Invalid api.auth-mode '" + authMode + "'; choose 'demo' or 'pro'. Price requests are disabled.";
+            return "Invalid api.auth-mode '"
+                    + authMode
+                    + "'; choose 'demo' or 'pro'. Price requests are disabled.";
         }
         if ("pro".equals(authMode) && apiKey.isBlank()) {
-            return "CoinGecko Pro mode requires api.pro-key. Price requests are disabled until it is configured.";
+            return "CoinGecko Pro mode requires api.pro-key. Price requests are disabled until it"
+                    + " is configured.";
         }
         return "Invalid CoinGecko API configuration. Price requests are disabled.";
     }
@@ -378,13 +436,15 @@ public final class CryptoPriceService {
     private String getEndpoint(String authMode) {
         String configuredUrl = plugin.getConfig().getString("api.url", DEMO_ENDPOINT);
         String baseUrl = configuredUrl == null ? DEMO_ENDPOINT : configuredUrl.trim();
-        if ("pro".equals(authMode) && DEMO_ENDPOINT.equalsIgnoreCase(baseUrl.replaceAll("/+$", ""))) {
+        if ("pro".equals(authMode)
+                && DEMO_ENDPOINT.equalsIgnoreCase(baseUrl.replaceAll("/+$", ""))) {
             return PRO_ENDPOINT;
         }
         return baseUrl;
     }
 
-    private String getQueryParameterName(ConfigurationSection queryConfig, String key, String fallback) {
+    private String getQueryParameterName(
+            ConfigurationSection queryConfig, String key, String fallback) {
         if (queryConfig == null) {
             return fallback;
         }
@@ -394,9 +454,10 @@ public final class CryptoPriceService {
 
     private String appendQuery(String baseUrl, Map<String, String> queryParameters) {
         StringBuilder result = new StringBuilder(baseUrl);
-        String separator = baseUrl.endsWith("?") || baseUrl.endsWith("&")
-                ? ""
-                : baseUrl.contains("?") ? "&" : "?";
+        String separator =
+                baseUrl.endsWith("?") || baseUrl.endsWith("&")
+                        ? ""
+                        : baseUrl.contains("?") ? "&" : "?";
         for (Map.Entry<String, String> parameter : queryParameters.entrySet()) {
             result.append(separator)
                     .append(encode(parameter.getKey()))
@@ -407,56 +468,40 @@ public final class CryptoPriceService {
         return result.toString();
     }
 
-    private Map<String, Quote> parseAndStore(String json, Set<String> ids, Set<String> currencies) {
-        Map<String, String> objects = new HashMap<>();
-        Matcher objectsMatcher = OBJECT.matcher(json);
-        while (objectsMatcher.find()) {
-            objects.put(objectsMatcher.group(1), objectsMatcher.group(2));
-        }
-
-        Map<String, Quote> fetchedQuotes = new HashMap<>();
-        for (String id : ids) {
-            String values = objects.get(id);
-            if (values == null) {
-                continue;
-            }
-            for (String currency : currencies) {
-                BigDecimal price = readNumber(values, currency);
-                if (price == null) {
-                    continue;
-                }
-                BigDecimal change = readNumber(values, currency + "_24h_change");
-                BigDecimal timestamp = readNumber(values, "last_updated_at");
-                Instant updated = timestamp == null
-                        ? Instant.now()
-                        : Instant.ofEpochSecond(timestamp.longValue());
-                fetchedQuotes.put(id.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT),
-                        new Quote(price, change, updated));
-            }
-        }
-        return fetchedQuotes;
-    }
-
     private void recordHistory(Map<String, Quote> fetchedQuotes) {
         Instant observedAt = Instant.now();
-        long retentionDays = Math.max(1, Math.min(30,
-                plugin.getConfig().getLong("prices.history-retention-days", 7)));
+        long retentionDays =
+                Math.max(
+                        1,
+                        Math.min(
+                                30,
+                                plugin.getConfig().getLong("prices.history-retention-days", 7)));
         Instant cutoff = observedAt.minus(Duration.ofDays(retentionDays));
         for (String quoteKey : history.keySet()) {
-            history.computeIfPresent(quoteKey, (key, existing) -> {
-                List<PricePoint> retained = existing.stream()
-                        .filter(point -> !point.observedAt().isBefore(cutoff))
-                        .toList();
-                return retained.isEmpty() ? null : retained;
-            });
+            history.computeIfPresent(
+                    quoteKey,
+                    (key, existing) -> {
+                        List<PricePoint> retained =
+                                existing.stream()
+                                        .filter(point -> !point.observedAt().isBefore(cutoff))
+                                        .toList();
+                        return retained.isEmpty() ? null : retained;
+                    });
         }
+        historyRevision++;
         for (Map.Entry<String, Quote> entry : fetchedQuotes.entrySet()) {
-            history.compute(entry.getKey(), (key, existing) -> {
-                List<PricePoint> updated = new ArrayList<>(existing == null ? List.of() : existing);
-                updated.removeIf(point -> point.observedAt().isBefore(cutoff));
-                updated.add(new PricePoint(observedAt, entry.getValue().price()));
-                return List.copyOf(updated);
-            });
+            if (isStale(entry.getValue())) continue;
+            history.compute(
+                    entry.getKey(),
+                    (key, existing) -> {
+                        List<PricePoint> updated =
+                                new ArrayList<>(existing == null ? List.of() : existing);
+                        updated.removeIf(point -> point.observedAt().isBefore(cutoff));
+                        Instant sourceTime = entry.getValue().updatedAt();
+                        if (updated.isEmpty() || sourceTime.isAfter(updated.getLast().observedAt()))
+                            updated.add(new PricePoint(sourceTime, entry.getValue().price()));
+                        return List.copyOf(updated);
+                    });
         }
     }
 
@@ -464,14 +509,20 @@ public final class CryptoPriceService {
         if (!historyFile.exists()) {
             return;
         }
-        YamlConfiguration saved = YamlConfiguration.loadConfiguration(historyFile);
+        YamlConfiguration saved = plugin.storage().load(historyFile);
+        backfilled.addAll(saved.getStringList("backfilled"));
         ConfigurationSection section = saved.getConfigurationSection("history");
         if (section == null) {
+            backfilled.clear();
             return;
         }
 
-        long retentionDays = Math.max(1, Math.min(30,
-                plugin.getConfig().getLong("prices.history-retention-days", 7)));
+        long retentionDays =
+                Math.max(
+                        1,
+                        Math.min(
+                                30,
+                                plugin.getConfig().getLong("prices.history-retention-days", 7)));
         Instant cutoff = Instant.now().minus(Duration.ofDays(retentionDays));
         for (String entryId : section.getKeys(false)) {
             String base = "history." + entryId + ".";
@@ -488,73 +539,343 @@ public final class CryptoPriceService {
                     continue;
                 }
                 try {
-                    Instant observedAt = Instant.ofEpochMilli(Long.parseLong(encodedPoint.substring(0, separator)));
+                    Instant observedAt =
+                            Instant.ofEpochMilli(
+                                    Long.parseLong(encodedPoint.substring(0, separator)));
                     BigDecimal price = new BigDecimal(encodedPoint.substring(separator + 1));
                     if (!observedAt.isBefore(cutoff)) {
                         points.add(new PricePoint(observedAt, price));
                     }
                 } catch (RuntimeException ignored) {
-                    plugin.getLogger().warning("Skipping invalid saved price history point for " + coinId + ".");
+                    plugin.getLogger()
+                            .warning(
+                                    "Skipping invalid saved price history point for "
+                                            + coinId
+                                            + ".");
                 }
             }
 
-            if (!points.isEmpty()) {
-                points.sort((left, right) -> left.observedAt().compareTo(right.observedAt()));
-                String quoteKey = coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT);
-                List<PricePoint> loadedPoints = List.copyOf(points);
-                history.put(quoteKey, loadedPoints);
-                PricePoint latest = loadedPoints.get(loadedPoints.size() - 1);
-                quotes.put(quoteKey, new Quote(latest.price(), null, latest.observedAt()));
+            points.sort((left, right) -> left.observedAt().compareTo(right.observedAt()));
+            String quoteKey =
+                    coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT);
+            if (!points.isEmpty()) history.put(quoteKey, List.copyOf(points));
+            String lastPrice = saved.getString(base + "last-price");
+            if (lastPrice != null || !points.isEmpty()) {
+                BigDecimal price =
+                        lastPrice == null ? points.getLast().price() : new BigDecimal(lastPrice);
+                Instant fallback = points.isEmpty() ? Instant.EPOCH : points.getLast().observedAt();
+                Instant updatedAt =
+                        Instant.ofEpochMilli(
+                                saved.getLong(base + "updated-at", fallback.toEpochMilli()));
+                String change = saved.getString(base + "change");
+                if (price.signum() > 0)
+                    quotes.put(
+                            quoteKey,
+                            new Quote(
+                                    price,
+                                    change == null ? null : new BigDecimal(change),
+                                    updatedAt));
             }
         }
+        backfilled.retainAll(history.keySet());
     }
 
     private void saveHistory() {
-        YamlConfiguration saved = new YamlConfiguration();
-        for (Map.Entry<String, List<PricePoint>> entry : history.entrySet()) {
-            int separator = entry.getKey().lastIndexOf(':');
-            if (separator < 1) {
-                continue;
-            }
-            String coinId = entry.getKey().substring(0, separator);
-            String currency = entry.getKey().substring(separator + 1);
-            String entryId = Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(entry.getKey().getBytes(StandardCharsets.UTF_8));
-            String base = "history." + entryId + ".";
-            saved.set(base + "coin-id", coinId);
-            saved.set(base + "currency", currency);
-            saved.set(base + "points", entry.getValue().stream()
-                    .map(point -> point.observedAt().toEpochMilli() + "|" + point.price().toPlainString())
-                    .toList());
-        }
-        try {
-            saved.save(historyFile);
-        } catch (IOException exception) {
-            plugin.getLogger().log(Level.SEVERE, "Could not save price history.", exception);
-        }
-    }
-
-    private BigDecimal readNumber(String jsonObject, String key) {
-        Pattern pattern = Pattern.compile("\"" + Pattern.quote(key)
-                + "\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?)");
-        Matcher matcher = pattern.matcher(jsonObject);
-        if (!matcher.find()) {
-            return null;
-        }
-        try {
-            return new BigDecimal(matcher.group(1));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
+        Map<String, List<PricePoint>> copy = Map.copyOf(history);
+        Map<String, Quote> quoteCopy = Map.copyOf(quotes);
+        Set<String> backfilledSnapshot = Set.copyOf(backfilled);
+        plugin.storage()
+                .save(
+                        historyFile,
+                        () -> {
+                            YamlConfiguration saved = new YamlConfiguration();
+                            Set<String> keys = new LinkedHashSet<>(copy.keySet());
+                            keys.addAll(quoteCopy.keySet());
+                            keys.forEach(
+                                    key -> {
+                                        List<PricePoint> points = copy.getOrDefault(key, List.of());
+                                        int separator = key.lastIndexOf(':');
+                                        String entryId =
+                                                Base64.getUrlEncoder()
+                                                        .withoutPadding()
+                                                        .encodeToString(
+                                                                key.getBytes(
+                                                                        StandardCharsets.UTF_8));
+                                        String base = "history." + entryId + ".";
+                                        saved.set(base + "coin-id", key.substring(0, separator));
+                                        saved.set(base + "currency", key.substring(separator + 1));
+                                        saved.set(
+                                                base + "points",
+                                                points.stream()
+                                                        .map(
+                                                                point ->
+                                                                        point.observedAt()
+                                                                                        .toEpochMilli()
+                                                                                + "|"
+                                                                                + point.price()
+                                                                                        .toPlainString())
+                                                        .toList());
+                                        Quote quote = quoteCopy.get(key);
+                                        if (quote != null) {
+                                            saved.set(
+                                                    base + "last-price",
+                                                    quote.price().toPlainString());
+                                            saved.set(
+                                                    base + "updated-at",
+                                                    quote.updatedAt().toEpochMilli());
+                                            saved.set(
+                                                    base + "change",
+                                                    quote.change24h() == null
+                                                            ? null
+                                                            : quote.change24h().toPlainString());
+                                        }
+                                    });
+                            saved.set("backfilled", List.copyOf(backfilledSnapshot));
+                            return saved;
+                        });
     }
 
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
-    public record Quote(BigDecimal price, BigDecimal change24h, Instant updatedAt) {
+    public void requestPair(String coinId, String currency) {
+        demand.put(
+                coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT),
+                Instant.now().plusSeconds(600));
+        refresh();
     }
 
-    public record PricePoint(Instant observedAt, BigDecimal price) {
+    private Set<String> desiredPairs() {
+        demand.entrySet().removeIf(e -> e.getValue().isBefore(Instant.now()));
+        Set<String> pairs = new LinkedHashSet<>(demand.keySet());
+        boards.getBoards().forEach(b -> pairs.add(b.quoteKey()));
+        if (plugin.features() != null) pairs.addAll(plugin.features().quotePairs());
+        if (plugin.getConfig().getBoolean("integrations.placeholderapi-preload", false)) {
+            var coins = plugin.getConfig().getConfigurationSection("coins");
+            if (coins != null)
+                for (String symbol : coins.getKeys(false))
+                    for (String currency : plugin.getConfig().getStringList("currencies"))
+                        pairs.add(
+                                coins.getString(symbol).toLowerCase(Locale.ROOT)
+                                        + ":"
+                                        + currency.toLowerCase(Locale.ROOT));
+        }
+        return pairs;
     }
+
+    public boolean isStale(Quote quote) {
+        return quote == null
+                || quote.updatedAt().isAfter(Instant.now().plusSeconds(300))
+                || Duration.between(quote.updatedAt(), Instant.now()).toMinutes() >= staleMinutes;
+    }
+
+    public Instant lastSuccessAt() {
+        return lastSuccessAt;
+    }
+
+    public Instant nextRequestAt() {
+        return retryNotBefore.isAfter(
+                        lastRequestAt.plusSeconds(
+                                plugin.getConfig()
+                                        .getLong("prices.minimum-request-interval-seconds", 60)))
+                ? retryNotBefore
+                : lastRequestAt.plusSeconds(
+                        plugin.getConfig().getLong("prices.minimum-request-interval-seconds", 60));
+    }
+
+    public boolean isInFlight() {
+        return inFlight.get();
+    }
+
+    public String failure() {
+        return lastLoggedFailure;
+    }
+
+    public void tick() {
+        if (closed) return;
+        Instant now = Instant.now();
+        if (lastLoggedFailure != null && !now.isBefore(nextRequestAt())) refresh();
+        else if (Duration.between(lastPriceRequestAt, now).toSeconds()
+                >= plugin.getConfig().getLong("prices.refresh-interval-seconds", 300)) refresh();
+        else if (!demand.isEmpty()
+                && demand.keySet().stream().anyMatch(key -> !quotes.containsKey(key))) refresh();
+        if (!inFlight.get()) backfill();
+    }
+
+    private void backfill() {
+        if (!plugin.getConfig().getBoolean("prices.backfill.enabled", false)) return;
+        Instant now = Instant.now();
+        if (now.isBefore(nextRequestAt())) return;
+        backfillRequests.removeIf(at -> at.isBefore(now.minusSeconds(3600)));
+        if (backfillRequests.size()
+                >= plugin.getConfig().getInt("prices.backfill.maximum-requests-per-hour", 6))
+            return;
+        String pair =
+                desiredPairs().stream()
+                        .filter(key -> !backfilled.contains(key))
+                        .filter(
+                                key ->
+                                        !now.isBefore(
+                                                backfillRetry.getOrDefault(key, Instant.EPOCH)))
+                        .findFirst()
+                        .orElse(null);
+        if (pair == null) return;
+        String authMode = getAuthMode();
+        String apiKey = getApiKey(authMode);
+        if (!isValidAuthentication(authMode, apiKey)) return;
+        String endpoint = plugin.getConfig().getString("prices.backfill.url", "");
+        String priceEndpoint = getEndpoint(authMode);
+        // Never send keys to an unrelated host. Custom price providers need an explicit history
+        // URL.
+        if (endpoint == null || endpoint.isBlank()) {
+            if (!priceEndpoint.equals(DEMO_ENDPOINT) && !priceEndpoint.equals(PRO_ENDPOINT)) return;
+            endpoint =
+                    priceEndpoint.substring(0, priceEndpoint.length() - "simple/price".length())
+                            + "coins/{id}/market_chart";
+        }
+        int separator = pair.lastIndexOf(':');
+        String id = pair.substring(0, separator);
+        String currency = pair.substring(separator + 1);
+        int days =
+                Math.min(
+                        plugin.getConfig().getInt("prices.history-retention-days", 7),
+                        plugin.getConfig().getInt("prices.backfill.days", 7));
+        long initial = plugin.getConfig().getLong("prices.retry.initial-delay-seconds", 60);
+        long maximum = plugin.getConfig().getLong("prices.retry.maximum-delay-seconds", 3600);
+        try {
+            HttpRequest.Builder builder =
+                    HttpRequest.newBuilder(
+                                    URI.create(
+                                            appendQuery(
+                                                    endpoint.replace("{id}", encode(id)),
+                                                    Map.of(
+                                                            "vs_currency",
+                                                            currency,
+                                                            "days",
+                                                            String.valueOf(days)))))
+                            .timeout(
+                                    Duration.ofSeconds(
+                                            plugin.getConfig()
+                                                    .getLong("prices.request-timeout-seconds", 20)))
+                            .header("Accept", "application/json")
+                            .header(
+                                    "User-Agent",
+                                    "CryptoCraft/" + plugin.getDescription().getVersion())
+                            .GET();
+            if (!apiKey.isEmpty())
+                builder.header(
+                        "pro".equals(authMode) ? "x-cg-pro-api-key" : "x-cg-demo-api-key", apiKey);
+            if (!inFlight.compareAndSet(false, true)) return;
+            lastRequestAt = now;
+            backfillRequests.add(now);
+            int version = generation;
+            request = http.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofString());
+            request.whenComplete(
+                    (response, error) ->
+                            onMain(
+                                    () -> {
+                                        if (version != generation || closed) return;
+                                        try {
+                                            if (!acceptResponse(
+                                                    response, error, initial, maximum)) {
+                                                backfillRetry.put(
+                                                        pair, Instant.now().plusSeconds(3600));
+                                                return;
+                                            }
+                                            List<PricePoint> imported =
+                                                    QuoteCodec.history(
+                                                            response.body(),
+                                                            Instant.now()
+                                                                    .minus(Duration.ofDays(days)),
+                                                            Instant.now());
+                                            if (imported.isEmpty())
+                                                throw new IllegalArgumentException(
+                                                        "Empty historical response");
+                                            NavigableMap<Instant, BigDecimal> merged =
+                                                    new java.util.TreeMap<>();
+                                            imported.forEach(
+                                                    p -> merged.put(p.observedAt(), p.price()));
+                                            history.getOrDefault(pair, List.of())
+                                                    .forEach(
+                                                            p ->
+                                                                    merged.put(
+                                                                            p.observedAt(),
+                                                                            p.price()));
+                                            history.put(
+                                                    pair,
+                                                    merged.entrySet().stream()
+                                                            .map(
+                                                                    e ->
+                                                                            new PricePoint(
+                                                                                    e.getKey(),
+                                                                                    e.getValue()))
+                                                            .toList());
+                                            backfilled.add(pair);
+                                            historyRevision++;
+                                            saveHistory();
+                                        } catch (RuntimeException exception) {
+                                            backfillRetry.put(
+                                                    pair, Instant.now().plusSeconds(3600));
+                                            logTransportFailure(exception, 3600);
+                                        } finally {
+                                            inFlight.set(false);
+                                            boards.refreshLoadedDisplays(this);
+                                        }
+                                    }));
+        } catch (RuntimeException exception) {
+            inFlight.set(false);
+            backfillRetry.put(pair, now.plusSeconds(3600));
+            logTransportFailure(exception, 3600);
+        }
+    }
+
+    private boolean acceptResponse(
+            HttpResponse<String> response, Throwable error, long initial, long maximum) {
+        if (error != null) {
+            logTransportFailure(error, applyServerErrorBackoff(initial, maximum));
+            return false;
+        }
+        if (response.statusCode() == 429) {
+            logHttpFailure(response, applyRateLimitBackoff(response, initial, maximum));
+            return false;
+        }
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            logHttpFailure(
+                    response,
+                    response.statusCode() == 401 || response.statusCode() == 403
+                            ? applyAccessErrorBackoff()
+                            : applyServerErrorBackoff(initial, maximum));
+            return false;
+        }
+        return true;
+    }
+
+    private void recovered() {
+        resetBackoffDelays();
+        if (lastLoggedFailure != null)
+            plugin.getLogger().info("Price API recovered after " + lastLoggedFailure + ".");
+        lastLoggedFailure = null;
+    }
+
+    private void onMain(Runnable action) {
+        if (closed || !plugin.isEnabled()) return;
+        try {
+            Bukkit.getScheduler().runTask(plugin, action);
+        } catch (org.bukkit.plugin.IllegalPluginAccessException ignored) {
+            /* Plugin stopped between callback and scheduling. */
+        }
+    }
+
+    public void close() {
+        closed = true;
+        generation++;
+        if (request != null) request.cancel(true);
+        http.shutdownNow();
+        saveHistory();
+    }
+
+    public record Quote(BigDecimal price, BigDecimal change24h, Instant updatedAt) {}
+
+    public record PricePoint(Instant observedAt, BigDecimal price) {}
 }

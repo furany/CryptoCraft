@@ -17,13 +17,24 @@ public record CryptoBoard(
         String symbol,
         String coinId,
         String currency,
-        BlockFace displayFacing
-) {
+        BlockFace displayFacing,
+        BoardSettings settings) {
     public String locationKey() {
         return worldId + ":" + x + ":" + y + ":" + z;
     }
 
     public String quoteKey() {
         return coinId.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT);
+    }
+
+    public CryptoBoard edited(
+            String symbol,
+            String coinId,
+            String currency,
+            BlockFace facing,
+            BoardSettings settings) {
+        return new CryptoBoard(
+                id, ownerId, ownerName, worldId, worldName, x, y, z, symbol, coinId, currency,
+                facing, settings);
     }
 }
