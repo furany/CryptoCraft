@@ -2,19 +2,65 @@
 
 ![CryptoCraft banner: live cryptocurrency prices on in-game boards](assets/cryptocraft-banner.png)
 
-CryptoCraft displays a visual cryptocurrency price chart above ordinary Minecraft blocks on Spigot, Paper, and Purpur. The block remains a normal vanilla block, so players can still interact with it as usual. The chart uses a plugin-rendered map in an invisible, fixed item frame; it is removed when the anchor block is broken and never drops as a map item or frame.
+CryptoCraft brings live cryptocurrency prices into your Minecraft world with floating chart boards above ordinary blocks. Follow BTC, ETH, SOL, or your own configured coins, edit boards in an inventory menu, and expand a chart into a wall of up to 3 x 3 maps. Compatible with Spigot, Paper, and Purpur 26.3.
+
+The anchor stays a normal vanilla block. Boards show the latest cached price, price history, and quote freshness; breaking the anchor removes the display and frees its owner's board slot.
 
 [![Build](https://github.com/furany/CryptoCraft/actions/workflows/build.yml/badge.svg)](https://github.com/furany/CryptoCraft/actions/workflows/build.yml)
 
 ## Download
 
-Download the latest compiled plugin JAR from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place it in your server's `plugins` directory and restart the server.
+Download the plugin from [Modrinth](https://modrinth.com/plugin/cryptocraft-furany). Tagged releases are also available from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place the JAR in your server's `plugins` directory and restart the server. See the [changelog](CHANGELOG.md) for version 1.1.0.
 
-## In-game screenshot
+## Features
 
-Current chart overview showing BTC/EUR, SOL/EUR, and ETH/EUR boards:
+- **Customizable charts:** three themes, chart/price/compact views, 1-168 hour windows, optional high/low values, and square walls of 1 x 1, 2 x 2, or 3 x 3 maps.
+- **Board menu and editor:** manage your boards, change coin/currency, height and facing, rename displays, and confirm removals in game.
+- **Watchlists and comparisons:** follow configured pairs and compare their percentage changes over a selected time window.
+- **Price alerts and redstone:** one-shot or repeating alerts, queued offline notifications, and optional signals through an existing lever.
+- **Optional paper trading:** virtual cash, holdings, trade history, and profit tracking when enabled by the server owner.
+- **Optional integrations:** WorldGuard protection and PlaceholderAPI values for scoreboards or other plugins.
+- **Server controls:** board limits, Bukkit permissions, English/German messages, API backoff, freshness indicators, and recoverable data backups.
 
-![CryptoCraft in-game chart overview](screenshots/crypto-charts.png)
+## In-game screenshots
+
+Captured on Minecraft 26.3 on October 7, 2026.
+
+### Live chart overview
+
+BTC/EUR, SOL/EUR, and ETH/EUR boards show cached prices, chart history, and the available sampling window above ordinary blocks.
+
+![BTC, SOL, and ETH cryptocurrency chart boards in game](screenshots/crypto-charts.png)
+
+### Board menu
+
+`/crypto menu` lists your boards and provides shortcuts to watchlists, price alerts, and the virtual portfolio.
+
+![CryptoCraft board menu with three boards and feature shortcuts](screenshots/board-menu.png)
+
+### Board editor and wall size
+
+Click a board to open its editor. Here, the wall-size control is set to 3, producing a 3 x 3 map display.
+
+![Board editor with the wall size set to three maps per side](screenshots/board-editor-wall-size.png)
+
+### Display height
+
+Adjust the board's height above its anchor in the editor; the screenshot shows a height of 2.35 blocks.
+
+![Board editor with display height set to 2.35 blocks](screenshots/board-editor-height.png)
+
+### Price-alert shortcut
+
+The alert shortcut opens your alert list and shows the command for creating a threshold notification.
+
+![Price-alert shortcut and command hint in the board menu](screenshots/price-alerts-menu.png)
+
+### Large chart wall
+
+An expanded ETH/EUR wall displays the same shared price history on a larger canvas.
+
+![Large ETH/EUR chart wall above the smaller BTC and SOL boards](screenshots/large-chart-wall.png)
 
 ## Requirements
 
@@ -36,7 +82,7 @@ The JAR is written to `build/libs/` (currently `CryptoCraft-1.1.0.jar`). Copy it
 
 ## Build with GitHub Actions
 
-The workflow in `.github/workflows/build.yml` builds the JAR on every push and pull request. It can also be started manually from the repository's **Actions** tab using **Build CryptoCraft â†’ Run workflow**.
+The workflow in `.github/workflows/build.yml` builds the JAR on every push and pull request. It can also be started manually from the repository's **Actions** tab using **Build CryptoCraft → Run workflow**.
 
 When a workflow run finishes, open that run in **Actions**, then download the **CryptoCraft** artifact. The downloaded ZIP contains the plugin JAR.
 
@@ -56,12 +102,20 @@ Run `/crypto` for help. `/cryptocraft` is an alias for `/crypto`.
 
 Commands:
 
-- `/crypto place <coin> [currency]` â€” place a chart above the block you are looking at. Currency is optional and defaults to EUR.
-- `/crypto remove` â€” remove your chart from the block you are looking at; admins can remove any chart.
-- `/crypto list` â€” list your charts. Admins see all charts; players see their own. Players with teleport permission can click an entry to teleport.
-- `/crypto tp <board-id>` â€” teleport to one of your charts. Requires `cryptocraft.teleport`; admins can teleport to any chart.
-- `/crypto price <coin> [currency]` â€” show the cached price for a configured coin.
-- `/crypto reload` â€” reload the plugin configuration and messages; requires the configured admin permission.
+- `/crypto place <coin> [currency]` — place a chart above the block you are looking at. Currency is optional and defaults to EUR.
+- `/crypto remove [board-id]` — remove your chart by ID or from the block you are looking at; admins can remove any chart.
+- `/crypto list` — list your charts. Admins see all charts; players see their own. Players with teleport permission can click an entry to teleport.
+- `/crypto menu` — open the board menu and editor.
+- `/crypto edit <board-id> <setting> <value>` — change a board's settings directly.
+- `/crypto tp <board-id>` — teleport to one of your charts. Requires `cryptocraft.teleport`; admins can teleport to any chart.
+- `/crypto price <coin> [currency]` — show a cached quote and its age; queue a request when needed.
+- `/crypto watch <add|remove|list> [coin] [currency]` — manage your watchlist.
+- `/crypto compare <coin> <coin> [currency] [hours]` — compare percentage changes and available history.
+- `/crypto alert <add|remove|list> ...` — manage threshold alerts; see the examples below.
+- `/crypto signal <board-id> <above|below> <price>` — link a repeating threshold rule to an existing lever.
+- `/crypto portfolio [buy|sell|history] ...` — view or trade in your virtual portfolio when enabled.
+- `/crypto status` — inspect API and storage health; requires the configured admin permission.
+- `/crypto reload` — reload the plugin configuration and messages; requires the configured admin permission.
 
 Tab completion suggests configured coins, currencies, and board IDs you can access.
 
@@ -124,7 +178,7 @@ default-currency: EUR
 
 After `stale-after-minutes` without a fresh quote, the chart replaces its 24-hour change with an orange `STALE` label and the quote age (`ALT` in German). The cached price remains visible while the API is unavailable.
 
-Charts show up to the most recent the boardâ€™s selected window (initially `boards.chart-history-hours`). The plot uses the collected history across the full graph width while data is warming up; its footer shows collected time versus the selected window and the number of samples. The left axis labels price, the bottom axis labels time, and the shaded line highlights the recent price movement. The header shows the latest price and 24-hour change. CryptoCraft samples prices during its existing batched refreshes and retains up to `prices.history-retention-days` days in `plugins/CryptoCraft/history.yml`. Normal chart updates make no chart-specific API requests. Optional initial history imports have a separate hourly budget and also respect the global request floor and API backoff.
+Charts show the most recent history within the board’s selected window (initially `boards.chart-history-hours`). The plot uses the collected history across the full graph width while data is warming up; its footer shows collected time versus the selected window and the number of samples. The left axis labels price, the bottom axis labels time, and the shaded line highlights the recent price movement. The header shows the latest price and 24-hour change. CryptoCraft samples prices during its existing batched refreshes and retains up to `prices.history-retention-days` days in `plugins/CryptoCraft/history.yml`. Normal chart updates make no chart-specific API requests. Optional initial history imports have a separate hourly budget and also respect the global request floor and API backoff.
 
 Set `language` in `plugins/CryptoCraft/messages.yml` to `en` or `de` to choose English or German command and chart messages. You can edit the language strings in that file and apply changes with `/crypto reload`.
 
@@ -177,7 +231,7 @@ You can also edit directly:
 /crypto remove <board-id>
 ```
 
-Get IDs from `/crypto list` or tab completion. Settings accept 1â€“168 hours, heights from 0.5 to 8 blocks, names up to 32 printable characters, themes `dark|light|ocean`, views `chart|price|compact`, and square walls of `1|2|3` maps per side. Walls count as one board. Their bottom row starts at the configured height above the anchor; columns expand symmetrically to the sides. Unloaded neighboring chunks are not force-loaded; their tiles appear when the chunks load. Growing or rotating a wall checks the full footprint against WorldGuard.
+Get IDs from `/crypto list` or tab completion. Settings accept 1–168 hours, heights from 0.5 to 8 blocks, names up to 32 printable characters, themes `dark|light|ocean`, views `chart|price|compact`, and square walls of `1|2|3` maps per side. Walls count as one board. Their bottom row starts at the configured height above the anchor; columns expand symmetrically to the sides. Unloaded neighboring chunks are not force-loaded; their tiles appear when the chunks load. Growing or rotating a wall checks the full footprint against WorldGuard.
 
 `cryptocraft.edit` defaults to everyone, but players can only edit their own boards. Per-board settings are persisted. Legacy boards use the configured default height and history window on their first load; those defaults apply to newly created boards afterward.
 
