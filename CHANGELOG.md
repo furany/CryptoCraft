@@ -20,9 +20,9 @@
 - Shared chart-image rendering/cache and chunk/entity indexes.
 - JSON number parsing, tiny-price formatting, provider timestamps, quote requests without boards, and stale-data handling.
 - Global request throttling, HTTP `Retry-After`, API error backoff, and rejection of old responses after reload/shutdown.
-- Board cleanup after explosions, pistons, and external anchor changes; safer teleports and authoritative permission checks.
+- Board cleanup after explosions, pistons, and external anchor changes; safer teleports and permission/ownership checks.
 - Configuration validation, legacy board migration, and fallback translations for existing custom message files.
-- Reproducible builds with a pinned Gradle wrapper and 42 automated tests.
+- Pinned Gradle wrapper and 42 automated tests.
 
 ### Upgrading from 1.0.0
 
@@ -30,5 +30,3 @@
 2. Replace the old JAR with `CryptoCraft-1.1.0.jar` and restart on Java 25 with Spigot, Paper, or Purpur 26.3.
 3. Existing boards and messages are preserved. Missing new configuration and message keys use bundled defaults.
 4. Add `portfolio.enabled: true` or `prices.backfill.enabled: true` to `config.yml` if you want those optional features. Both are disabled by default.
-
-Screenshot evidence covers charts and board menus/editing; the automated suite covers the core logic. Verify optional integration and redstone behavior on your chosen server build.

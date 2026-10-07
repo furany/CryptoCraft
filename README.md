@@ -2,9 +2,9 @@
 
 ![CryptoCraft banner: live cryptocurrency prices on in-game boards](assets/cryptocraft-banner.png)
 
-CryptoCraft brings live cryptocurrency prices into your Minecraft world with floating chart boards above ordinary blocks. Follow BTC, ETH, SOL, or your own configured coins, edit boards in an inventory menu, and expand a chart into a wall of up to 3 x 3 maps. Compatible with Spigot, Paper, and Purpur 26.3.
+CryptoCraft displays cryptocurrency prices and history on floating map boards above ordinary Minecraft blocks. Boards can be edited through an inventory menu and expanded to 3 x 3 maps. Supports Spigot, Paper, and Purpur 26.3.
 
-The anchor stays a normal vanilla block. Boards show the latest cached price, price history, and quote freshness; breaking the anchor removes the display and frees its owner's board slot.
+The anchor stays a normal vanilla block. Boards show the last cached price, price history, and whether the quote is stale. Breaking the anchor removes the display and frees its owner's board slot.
 
 [![Build](https://github.com/furany/CryptoCraft/actions/workflows/build.yml/badge.svg)](https://github.com/furany/CryptoCraft/actions/workflows/build.yml)
 
@@ -321,4 +321,4 @@ All data writes are coalesced on one background writer, use temporary files and 
 
 Chart images are computed on a separate worker from immutable snapshots, cached across matching boards, and copied to map canvases only when the image changes. Chunk/entity indexes reduce repeated searches during normal refreshes.
 
-The automated suite covers numerical parsing, historical imports, retry delays, stale data, request gating and reload generations, authorization, persistence/recovery, portfolio accounting, alert rearming, configuration defaults, geometry and raster rendering. Generated theme/view previews are in `build/chart-previews/`; test reports are in `build/reports/tests/test/`. A live server check is still needed for final in-game menu, entity and cross-plugin behavior on the intended Spigot/Paper/Purpur build.
+The tests cover price parsing, history imports, API retries, stale data, reload handling, permissions, data recovery, portfolio accounting, alerts, configuration, and chart rendering. Chart previews are in `build/chart-previews/`; test reports are in `build/reports/tests/test/`.

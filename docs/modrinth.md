@@ -1,14 +1,14 @@
 # CryptoCraft
 
-Bring live cryptocurrency prices into your Minecraft world. CryptoCraft displays floating chart boards above ordinary blocks on **Spigot, Paper, and Purpur 26.3**. Track BTC, ETH, SOL, or your own configured coins, customize displays in an inventory menu, and expand charts into walls of up to **3 x 3 maps**.
+CryptoCraft displays cryptocurrency prices and history on floating map boards above ordinary Minecraft blocks. Supports **Spigot, Paper, and Purpur 26.3**. Boards can be edited through an inventory menu and expanded to **3 x 3 maps**.
 
 The anchor remains a normal vanilla block. Breaking it removes the attached board and frees the owner's board slot. Charts retain the last cached quote during API outages and visibly mark stale data.
 
 ## Features in 1.1.0
 
 - **Board menu and editor:** change coin, currency, name, facing, height, history window, theme, view, and wall size in game.
-- **Charts for your build:** dark, light, or ocean themes; chart, price, or compact views; optional high/low values; 1-168 hour history windows.
-- **Watchlists and comparisons:** save your favorite pairs and compare percentage changes with actual history coverage.
+- **Chart settings:** dark, light, or ocean themes; chart, price, or compact views; optional high/low values; 1-168 hour history windows.
+- **Watchlists and comparisons:** save coin/currency pairs and compare their percentage changes over the available history.
 - **Price alerts:** one-shot or repeating threshold notifications, including queued messages for offline players.
 - **Redstone signals:** power an existing lever above a board's anchor while a fresh quote matches a threshold.
 - **Optional virtual portfolio:** paper trading with virtual cash, holdings, profit tracking, and trade history.
@@ -21,7 +21,7 @@ Captured on Minecraft 26.3 on October 7, 2026.
 
 ### Live BTC, SOL, and ETH charts
 
-Three boards show cached EUR prices and shared price history above ordinary blocks.
+BTC, SOL, and ETH boards show cached EUR prices and price history above ordinary blocks.
 
 ![BTC, SOL, and ETH cryptocurrency chart boards](../screenshots/crypto-charts.png)
 
@@ -51,11 +51,11 @@ The menu opens your alert list and shows how to add a threshold notification.
 
 ### Large ETH chart wall
 
-A 3 x 3 ETH/EUR wall makes the price history easier to read from a distance.
+ETH/EUR price history on a 3 x 3 map wall.
 
 ![Large ETH/EUR chart wall](../screenshots/large-chart-wall.png)
 
-## Install and get started
+## Installation
 
 1. Run **Java 25** and **Spigot, Paper, or Purpur 26.3**.
 2. Put `CryptoCraft-1.1.0.jar` in the server's `plugins` folder and restart.
@@ -75,7 +75,7 @@ BTC, ETH, and SOL are included by default. EUR is the default currency; USD and 
 /crypto alert add ETH USD below 2000 repeat
 ```
 
-Use `/crypto list` to find board IDs. Direct edits are also available:
+Use `/crypto list` to find board IDs. Edit a board with:
 
 ```text
 /crypto edit <board-id> theme ocean
@@ -103,7 +103,7 @@ Edit `plugins/CryptoCraft/config.yml` and run `/crypto reload`. Players get one 
 
 English and German messages are supplied; choose the language in `messages.yml`. Optional history import and virtual trading are disabled by default.
 
-Prices come from CoinGecko or a compatible provider. All subscribed pairs share batched requests with a minimum interval, error backoff, and stale-price indicators. A CoinGecko Demo key can be configured for more reliable polling. Quotes are periodically refreshed rather than streamed on every market tick.
+Prices come from CoinGecko or a compatible provider. Requests are batched and rate-limited. Failed requests are retried with increasing delays; old quotes are marked stale. A CoinGecko Demo key can be configured in `config.yml`. The default refresh interval is five minutes.
 
 ## Upgrading and support
 
