@@ -1,17 +1,16 @@
 name: CryptoCraft
-version: '1.0.0'
+version: '${version}'
 main: de.cryptocraft.CryptoCraftPlugin
 api-version: '26.3'
 description: Shows cryptocurrency prices on placeable boards.
 authors: [CryptoCraft]
+softdepend: [WorldGuard, PlaceholderAPI]
 
 commands:
   crypto:
     description: Manage cryptocurrency price boards.
-    usage: /crypto <place|remove|list|price|reload>
+    usage: /crypto <place|remove|list|price|tp|edit|menu|watch|compare|alert|signal|portfolio|status|reload>
     aliases: [cryptocraft]
-    permission: cryptocraft.use
-    permission-message: You do not have permission to use CryptoCraft.
 
 permissions:
   cryptocraft.use:
@@ -32,3 +31,18 @@ permissions:
   cryptocraft.admin:
     description: Erlaubt die Verwaltung und hebt das Anzeigelimit auf.
     default: op
+  cryptocraft.teleport:
+    description: Allows teleporting to CryptoCraft boards.
+    default: op
+  cryptocraft.edit:
+    description: Allows editing owned boards.
+    default: true
+  cryptocraft.alert:
+    description: Allows price alerts.
+    default: true
+  cryptocraft.signal:
+    description: Allows linking owned boards to an existing lever.
+    default: op
+  cryptocraft.portfolio:
+    description: Allows virtual paper trading when enabled in config.yml.
+    default: true

@@ -24,11 +24,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: current
           cache-provider: basic
 
       - name: Build plugin JAR
-        run: gradle --no-daemon clean build
+        run: ./gradlew --no-daemon clean build
 
       - name: Upload plugin JAR
         uses: actions/upload-artifact@v7
