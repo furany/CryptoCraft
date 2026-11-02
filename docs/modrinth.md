@@ -1,112 +1,98 @@
 # CryptoCraft
 
-CryptoCraft displays cryptocurrency prices and history on floating map boards above ordinary Minecraft blocks. Supports **Spigot, Paper, and Purpur 26.3**. Boards can be edited through an inventory menu and expanded to **3 x 3 maps**.
+CryptoCraft brings cryptocurrency charts and server-money trading to Minecraft. Place a chart above a normal block or build a computer terminal with a map screen, housing, stand, and keyboard. It runs on **Spigot, Paper, and Purpur 26.3 with Java 25**, without a resource pack.
 
-The anchor remains a normal vanilla block. Breaking it removes the attached board and frees the owner's board slot. Charts retain the last cached quote during API outages and visibly mark stale data.
+Charts, alerts, and trading share the same external price source. The coins exist only inside your server: there are no real wallets or cryptocurrency transfers.
 
-## Features in 1.1.0
+## What's new in 1.2.0
 
-- **Board menu and editor:** change coin, currency, name, facing, height, history window, theme, view, and wall size in game.
-- **Chart settings:** dark, light, or ocean themes; chart, price, or compact views; optional high/low values; 1-168 hour history windows.
-- **Watchlists and comparisons:** save coin/currency pairs and compare their percentage changes over the available history.
-- **Price alerts:** one-shot or repeating threshold notifications, including queued messages for offline players.
-- **Redstone signals:** power an existing lever above a board's anchor while a fresh quote matches a threshold.
-- **Optional virtual portfolio:** paper trading with virtual cash, holdings, profit tracking, and trade history.
-- **Optional WorldGuard and PlaceholderAPI support:** respect protected regions and expose cached prices to other plugins.
-- **Server administration:** configurable board limits, Bukkit permissions, English/German messages, and `/crypto status` diagnostics.
+- **Server-money trading through Vault:** buy by total budget or coin quantity, sell a quantity or percentage of your holdings, and confirm the preview before submitting.
+- **Three economic modes:** an unlimited server broker, a broker backed by a funded reserve, or player-to-player matching at the external reference price.
+- **Computer terminals and market boards:** up to six coins on one screen, with layouts from 1 × 1 to 3 × 3 maps. Market boards start at 2 × 2.
+- **Depot and orders:** inspect available/reserved coins, follow partial fills, cancel remaining orders, and view completed trades. Orders can execute while their owners are offline.
+- **Durable accounting:** SQLite stores holdings, reservations, orders, reserve, and the journal. Uncertain Vault transfers require an administrative reconciliation and are not automatically repeated.
+- **Ten default coins:** BTC, ETH, SOL, XRP, ADA, DOGE, LTC, BNB, AVAX, and LINK on new installations. Admins can add unique provider IDs and control display and trading availability separately.
+
+The board editor, dark/light/ocean themes, watchlists, price alerts, redstone signals, and independent paper portfolio remain available. Menus include search, pagination, and English/German messages. WorldGuard and PlaceholderAPI integrations are optional.
+
+## Installation and first terminal
+
+1. Put `CryptoCraft-1.2.0.jar` in your server's `plugins` folder and restart on Java 25.
+2. For server-money trading, also install **Vault and a compatible economy provider**, such as EssentialsX. Charts, watchlists, alerts, and the paper portfolio work without them.
+3. Look at a block and run `/crypto market BTC,ETH,SOL EUR` or `/crypto place BTC EUR`.
+4. Use `/crypto list` to find the board ID. As an administrator, run `/crypto terminal <board-id> enable`.
+5. Right-click the terminal to open the exchange. Confirm an order, follow it with `/crypto orders`, and inspect holdings with `/crypto depot`.
+
+By default, order submission requires an approved terminal within six blocks. Access is checked again at confirmation. Depot, history, orders, and cancellation work anywhere. All terminals use the same market. Removing a board's anchor removes the display; the anchor itself remains an ordinary Minecraft block.
+
+## Prices and economic modes
+
+Trade value is coin quantity × external reference price × the configured server-money factor. Fees are separate. A price guard protects an order from an unfavorable move; it never sets the execution price.
+
+Every execution waits for a fresh provider timestamp after the order was accepted. Player-to-player execution needs a timestamp after both orders. Missing, stale, or unverified timestamps pause trading. Prices are polled and cached, rather than streamed tick by tick.
+
+| Mode | How it works |
+| --- | --- |
+| `unlimited` | The server accepts valid orders within the configured limits and funds sales. This is the default. |
+| `reserve` | Purchases add to a reserve. Sales require enough reserve; an uncovered sale is rejected and its coins released. The reserve starts at zero and admins can fund it from Vault. |
+| `p2p` | Oldest executable buy/sell orders match at the external price. Partial fills keep priority. No self-trades or automatic fallback to the server broker. |
+
+An unmatched player order waits until a match, cancellation, or expiry. Unused budget and remaining coins are released. The default settings are EUR reference prices, factor 1, zero fees, a 1% price guard, five-minute orders, a maximum quote age of 120 seconds, and 20 open orders per player. Order values default to 1–1,000,000 server-money units.
+
+## Commands
+
+```text
+/crypto menu
+/crypto market BTC,ETH,SOL EUR
+/crypto terminal <board-id> enable
+/crypto trade BTC
+/crypto trade buy BTC 100
+/crypto trade buy-quantity BTC 0.01
+/crypto trade sell BTC 0.005
+/crypto depot
+/crypto depot history
+/crypto orders
+/crypto orders cancel <order-id>
+/crypto watch add SOL EUR
+/crypto alert add BTC EUR above 70000 once
+```
+
+`trade buy` takes a total budget including fees. `buy-quantity` opens a preview with a maximum budget for confirmation. The sell menu also offers 25%, 50%, and 100% of available holdings.
+
+Administrators can use `/crypto economy status`, `/crypto economy reserve deposit <amount>`, and `/crypto coin search <name|symbol|provider-id>`. Add a coin with `/crypto coin add <SYMBOL> <provider-id>` and explicitly enable its trading with `/crypto coin enable <SYMBOL>`. Display and trading controls are independent. Existing commands remain available; use `/crypto` for help.
 
 ## Screenshots
 
-Captured on Minecraft 26.3 on October 7, 2026.
+These unedited 1920 × 1080 Minecraft F2 captures show CryptoCraft 1.2.0 on a local Paper 26.3 server, without a resource pack or shaders. They use controlled demo prices, chart history, and test balances; they demonstrate the interface, not live market prices.
 
-### Live BTC, SOL, and ETH charts
+### Computer terminals in three sizes
 
-BTC, SOL, and ETH boards show cached EUR prices and price history above ordinary blocks.
+![Computer terminals with 1 × 1, 2 × 2, and 3 × 3 map screens](https://raw.githubusercontent.com/furany/CryptoCraft/v1.2.0/screenshots/v1.2.0/terminal-sizes.png)
 
-![BTC, SOL, and ETH cryptocurrency chart boards](../screenshots/crypto-charts.png)
+### Bitcoin chart terminal
 
-### Board menu
+![Bitcoin chart on a vanilla computer terminal](https://raw.githubusercontent.com/furany/CryptoCraft/v1.2.0/screenshots/v1.2.0/bitcoin-chart-terminal.png)
 
-Open `/crypto menu` to select a board or use the watchlist, alert, and portfolio shortcuts.
+### Trade confirmation
 
-![Board menu with three boards and feature shortcuts](../screenshots/board-menu.png)
+![Buy preview showing quote age, quantity, fees, maximum debit, and price guard](https://raw.githubusercontent.com/furany/CryptoCraft/v1.2.0/screenshots/v1.2.0/trade-confirmation.png)
 
-### Wall-size control
+### Server-money depot
 
-The editor's wall-size setting expands a board up to three maps per side.
+![Depot showing available Bitcoin, reserved coins, and estimated reference value](https://raw.githubusercontent.com/furany/CryptoCraft/v1.2.0/screenshots/v1.2.0/server-money-depot.png)
 
-![Board editor with wall size set to 3](../screenshots/board-editor-wall-size.png)
+[All six screenshots and bilingual gallery captions](https://github.com/furany/CryptoCraft/blob/v1.2.0/screenshots/v1.2.0/README.md), including the market-terminal close-up and completed order.
 
-### Height control
+## Configuration and upgrading
 
-Adjust a board's height above its anchor; this example uses 2.35 blocks.
+Edit `plugins/CryptoCraft/config.yml` and run `/crypto reload`. Choose `en` or `de` in `messages.yml`. Players get one board by default, with configurable permission-based limits. `cryptocraft.trade` defaults to everyone; terminal and economy administration default to operators. WorldGuard protection and existing ownership rules still apply.
 
-![Board editor with height set to 2.35 blocks](../screenshots/board-editor-height.png)
+The paper portfolio is enabled separately with `portfolio.enabled: true`. Its cash and holdings never mix with Vault money or the server-money depot. Optional history import uses `prices.backfill.enabled: true`. Prices come from CoinGecko or a compatible provider; requests share rate limits and retry delays. A CoinGecko Demo key can be configured.
 
-### Price-alert shortcut
+To upgrade from 1.1.0, stop the server and back up the complete CryptoCraft directory together with your economy provider's data. Replace the JAR and restart. Existing boards, custom messages, coin configuration, and paper portfolios are retained. Existing boards remain ordinary charts until approved as terminals; the new SQLite depot starts separately.
 
-The menu opens your alert list and shows how to add a threshold notification.
+Legacy configurations without `trading.reference-currency` inherit their valid existing `default-currency`, including USD-only setups; new installations default to EUR, and reloads without that key retain the active trading currency.
 
-![Price-alert shortcut with a command hint](../screenshots/price-alerts-menu.png)
+Review the economic mode, currency, conversion factor, and provider before starting server-money trading. Mode changes require no open orders or unclear transfers. Currency, factor, and money precision cannot be changed by an ordinary reload after economic activity. Disabled coins retain their holdings. If a Vault movement is uncertain after a crash or provider failure, an administrator must verify and reconcile it before the affected account resumes.
 
-### Large ETH chart wall
-
-ETH/EUR price history on a 3 x 3 map wall.
-
-![Large ETH/EUR chart wall](../screenshots/large-chart-wall.png)
-
-## Installation
-
-1. Run **Java 25** and **Spigot, Paper, or Purpur 26.3**.
-2. Put `CryptoCraft-1.1.0.jar` in the server's `plugins` folder and restart.
-3. Look at a block and run `/crypto place BTC EUR`.
-4. Open `/crypto menu` to customize the board.
-
-BTC, ETH, and SOL are included by default. EUR is the default currency; USD and TRY are also configured. Add other coins and currencies in `plugins/CryptoCraft/config.yml`.
-
-```text
-/crypto place BTC EUR
-/crypto menu
-/crypto list
-/crypto price ETH USD
-/crypto watch add SOL EUR
-/crypto compare BTC ETH EUR 24
-/crypto alert add BTC EUR above 70000 once
-/crypto alert add ETH USD below 2000 repeat
-```
-
-Use `/crypto list` to find board IDs. Edit a board with:
-
-```text
-/crypto edit <board-id> theme ocean
-/crypto edit <board-id> hours 72
-/crypto edit <board-id> size 3
-/crypto edit <board-id> name My ETH chart
-/crypto remove <board-id>
-```
-
-`/crypto tp <board-id>` requires teleport permission. `/crypto reload` and `/crypto status` require the configured admin permission.
-
-## Optional features
-
-Enable `portfolio.enabled: true` in `config.yml` for virtual trading, then use `/crypto portfolio`, `/crypto portfolio buy BTC 0.01`, or `/crypto portfolio history`. New accounts start with 10,000 virtual EUR by default. Trades require fresh quotes and sufficient cash or holdings. The portfolio uses game money and does not connect to real wallets.
-
-Enable `prices.backfill.enabled: true` to import initial history. Charts otherwise build their history from scheduled price updates. Imports share the API request limit and have a separate hourly budget.
-
-For redstone, place a lever directly above a board's anchor and run `/crypto signal <board-id> above 70000`. Signals require the `cryptocraft.signal` permission and follow fresh cached prices.
-
-WorldGuard and PlaceholderAPI are optional. When installed and enabled, WorldGuard protects board modifications, and PlaceholderAPI exposes values such as `%cryptocraft_price_BTC_EUR%`, `%cryptocraft_change_BTC_EUR%`, and `%cryptocraft_boards%`.
-
-## Configuration and permissions
-
-Edit `plugins/CryptoCraft/config.yml` and run `/crypto reload`. Players get one board by default; configure limits and permission overrides for your server. Players manage their own boards, while admins can manage all boards. LuckPerms works through Bukkit permissions and is not required.
-
-English and German messages are supplied; choose the language in `messages.yml`. Optional history import and virtual trading are disabled by default.
-
-Prices come from CoinGecko or a compatible provider. Requests are batched and rate-limited. Failed requests are retried with increasing delays; old quotes are marked stale. A CoinGecko Demo key can be configured in `config.yml`. The default refresh interval is five minutes.
-
-## Upgrading and support
-
-Back up `plugins/CryptoCraft/`, stop the server, replace the old JAR, and restart. Existing boards and custom messages are preserved; missing new keys use bundled defaults.
-
-See the [source and full documentation](https://github.com/furany/CryptoCraft), [report an issue](https://github.com/furany/CryptoCraft/issues), or read the [1.1.0 changelog](https://github.com/furany/CryptoCraft/blob/dev/CHANGELOG.md). CryptoCraft is open source under the MIT license.
+See the [full documentation](https://github.com/furany/CryptoCraft/blob/v1.2.0/README.md), [trading and recovery guide](https://github.com/furany/CryptoCraft/blob/v1.2.0/docs/TRADING.md), [changelog](https://github.com/furany/CryptoCraft/blob/v1.2.0/CHANGELOG.md), or [report an issue](https://github.com/furany/CryptoCraft/issues).

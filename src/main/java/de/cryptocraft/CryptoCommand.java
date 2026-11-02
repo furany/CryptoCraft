@@ -45,7 +45,11 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         }
 
         try {
+            if (new TradingCommands(plugin).handle(sender, args)) return true;
+            if (new EconomyAdminCommands(plugin).handle(sender, args)) return true;
             switch (args[0].toLowerCase(Locale.ROOT)) {
+                case "market" -> new BoardCommands(plugin).market(requirePlayer(sender), args);
+                case "terminal" -> new BoardCommands(plugin).terminal(requirePlayer(sender), args);
                 case "place" -> place(sender, args);
                 case "remove" -> remove(sender, args);
                 case "list" -> list(sender);
@@ -71,7 +75,8 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
                     "inputError",
                     Map.of(
                             "error",
-                            error.getMessage() == null ? "Invalid input" : error.getMessage()));
+                            plugin.trading() != null ? plugin.trading().error(error)
+                                    : error.getMessage() == null ? plugin.messages().get("menuOperationFailed") : error.getMessage()));
         }
         return true;
     }
@@ -88,6 +93,9 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
                             List.of(
                                     "place", "remove", "list", "price", "edit", "menu", "watch",
                                     "compare"));
+            subcommands.addAll(List.of("trade", "depot", "orders", "market"));
+            if (sender.hasPermission("cryptocraft.terminal.admin")) subcommands.add("terminal");
+            if (sender.hasPermission("cryptocraft.economy.admin") || isAdmin(sender)) subcommands.addAll(List.of("economy", "coin"));
             if (canTeleport(sender)) {
                 subcommands.add("tp");
             }
@@ -102,6 +110,17 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         }
 
         String subcommand = args[0].toLowerCase(Locale.ROOT);
+        if (List.of("trade", "depot", "orders").contains(subcommand))
+            return new TradingCommands(plugin).complete(sender, args);
+        if (List.of("economy", "coin").contains(subcommand))
+            return new EconomyAdminCommands(plugin).complete(sender, args);
+        if (subcommand.equals("terminal")) {
+            if (!sender.hasPermission("cryptocraft.terminal.admin")) return List.of();
+            return args.length == 2 ? complete(plugin.boards().getBoards().stream().map(CryptoBoard::id).toList(), args[1])
+                    : args.length == 3 ? complete(List.of("enable", "disable"), args[2]) : List.of();
+        }
+        if (subcommand.equals("market"))
+            return args.length == 2 ? complete(getConfiguredCoins(), args[1]) : args.length == 3 ? complete(getConfiguredCurrencies(), args[2]) : List.of();
         if (args.length == 2 && subcommand.equals("place")) {
             return sender.hasPermission("cryptocraft.place")
                     ? complete(getConfiguredCoins(), args[1])
@@ -131,6 +150,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
             return complete(
                     List.of(
                             "coin",
+                            "coins",
                             "currency",
                             "facing",
                             "name",
@@ -144,7 +164,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         if (args.length == 4 && subcommand.equals("edit"))
             return complete(
                     switch (args[2].toLowerCase(Locale.ROOT)) {
-                        case "coin" -> getConfiguredCoins();
+                        case "coin", "coins" -> getConfiguredCoins();
                         case "currency" -> getConfiguredCurrencies();
                         case "facing" -> List.of("north", "east", "south", "west");
                         case "hours" -> List.of("1", "6", "24", "72", "168");
@@ -204,6 +224,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         }
 
         String symbol = args[1].toUpperCase(Locale.ROOT);
+        requireDisplayCoin(symbol);
         String coinId = plugin.getConfig().getString("coins." + symbol);
         if (coinId == null || coinId.isBlank()) {
             send(sender, "coinUnknown", Map.of("coins", String.join(", ", getConfiguredCoins())));
@@ -286,7 +307,8 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
             send(sender, "boardNotFound");
             return;
         }
-        if (!board.ownerId().equals(player.getUniqueId()) && !isAdmin(player)) {
+        if (!board.ownerId().equals(player.getUniqueId()) && !isAdmin(player)
+                && !(board.terminal() && player.hasPermission("cryptocraft.terminal.admin"))) {
             send(sender, "removeOwnOnly");
             return;
         }
@@ -310,7 +332,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
                             .get(
                                     "listEntry",
                                     Map.of(
-                                            "symbol", board.symbol(),
+                                            "symbol", board.market() ? String.join(", ", board.quotePairs().stream().map(QuotePair::symbol).toList()) : board.symbol(),
                                             "currency", board.currency(),
                                             "world", board.worldName(),
                                             "x", String.valueOf(board.x()),
@@ -488,12 +510,14 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         CryptoBoard board = plugin.boards().getBoard(id);
         if (board == null)
             throw new IllegalArgumentException(plugin.messages().get("boardIdUnknown"));
-        if (!board.ownerId().equals(player.getUniqueId()) && !isAdmin(player))
+        if (!board.ownerId().equals(player.getUniqueId()) && !isAdmin(player)
+                && !(board.terminal() && player.hasPermission("cryptocraft.terminal.admin")))
             throw new IllegalArgumentException(plugin.messages().get("removeOwnOnly"));
         return board;
     }
 
     private void editable(Player player, CryptoBoard board) {
+        if (board.terminal()) new BoardCommands(plugin).editable(player, board);
         var world = plugin.boards().resolveWorld(board);
         if (world == null)
             throw new IllegalArgumentException(plugin.messages().get("teleportWorldUnloaded"));
@@ -514,9 +538,18 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         permission(player, "cryptocraft.edit");
         CryptoBoard board = ownedBoard(player, id);
         editable(player, board);
+        if (key.equalsIgnoreCase("coins")) {
+            new BoardCommands(plugin).editCoins(player, id, value);
+            return;
+        }
+        if (board.market() && List.of("coin", "hours", "style", "range").contains(key.toLowerCase(Locale.ROOT)))
+            throw new IllegalArgumentException(plugin.messages().getLanguage().equals("de")
+                    ? "Diese Einstellung ist nur für Einzelcoin-Charts verfügbar. Nutze 'coins' für Marktzeilen."
+                    : "This setting is only available for single-coin charts. Use 'coins' for market rows.");
         CryptoBoard updated =
                 switch (key.toLowerCase(Locale.ROOT)) {
                     case "coin" -> {
+                        requireDisplayCoin(value);
                         QuotePair pair = plugin.features().pair(value, board.currency());
                         yield board.edited(
                                 pair.symbol(),
@@ -558,15 +591,16 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
                     || !plugin.protection().canBuild(player, at.getBlock()))
                 throw new IllegalArgumentException(plugin.messages().get("regionDenied"));
         }
+        new BoardCommands(plugin).validateFootprint(player, updated);
         plugin.boards().replace(updated);
-        plugin.prices().requestPair(updated.coinId(), updated.currency());
+        plugin.prices().refresh();
     }
 
     private void edit(CommandSender sender, String[] args) {
         if (args.length < 4)
             throw new IllegalArgumentException(
                     "/crypto edit <board-id>"
-                            + " <coin|currency|facing|name|height|hours|theme|style|size|range>"
+                            + " <coin|coins|currency|facing|name|height|hours|theme|style|size|range>"
                             + " <value>");
         editBoard(
                 requirePlayer(sender),
@@ -613,6 +647,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
                 || !List.of("add", "remove").contains(args[1].toLowerCase(Locale.ROOT)))
             throw new IllegalArgumentException(
                     "/crypto watch <add|remove> <coin> [currency] | /crypto watch list");
+        if (args[1].equalsIgnoreCase("add")) requireDisplayCoin(args[2]);
         plugin.features()
                 .watch(
                         player.getUniqueId(),
@@ -711,6 +746,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
             return;
         }
         if ((args.length == 6 || args.length == 7) && args[1].equalsIgnoreCase("add")) {
+            requireDisplayCoin(args[2]);
             if (args.length == 7
                     && !List.of("once", "repeat").contains(args[6].toLowerCase(Locale.ROOT)))
                 throw new IllegalArgumentException("once|repeat");
@@ -737,6 +773,8 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         if (args.length != 4)
             throw new IllegalArgumentException("/crypto signal <board-id> <above|below> <price>");
         CryptoBoard board = ownedBoard(player, args[1]);
+        if (board.market()) throw new IllegalArgumentException(plugin.messages().getLanguage().equals("de")
+                ? "Redstone-Signale benötigen eine Einzelcoin-Tafel." : "Redstone signals need a single-coin board.");
         editable(player, board);
         PriceAlarm alarm =
                 plugin.features()
@@ -848,6 +886,10 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         send(sender, "helpList");
         send(sender, "helpPrice");
         send(sender, "helpFeatures");
+        send(sender, "helpTrading");
+        send(sender, "helpMarket");
+        if (sender.hasPermission("cryptocraft.terminal.admin")) send(sender, "helpTerminal");
+        if (sender.hasPermission("cryptocraft.economy.admin") || isAdmin(sender)) send(sender, "helpEconomy");
         if (canTeleport(sender)) {
             send(sender, "helpTeleport");
         }
@@ -874,7 +916,7 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
     }
 
     private List<CryptoBoard> getVisibleBoards(Player player) {
-        return isAdmin(player)
+        return isAdmin(player) || player.hasPermission("cryptocraft.terminal.admin")
                 ? plugin.boards().getBoards()
                 : plugin.boards().getBoardsOwnedBy(player.getUniqueId());
     }
@@ -884,8 +926,17 @@ public final class CryptoCommand implements CommandExecutor, TabCompleter {
         return configuredCoins == null
                 ? List.of()
                 : configuredCoins.getKeys(false).stream()
+                        .filter(this::displayEnabled)
                         .sorted(String.CASE_INSENSITIVE_ORDER)
                         .toList();
+    }
+
+    private boolean displayEnabled(String symbol) {
+        return plugin.getConfig().getStringList("trading.display-disabled-coins").stream().noneMatch(symbol::equalsIgnoreCase);
+    }
+
+    private void requireDisplayCoin(String symbol) {
+        if (!displayEnabled(symbol)) throw new IllegalArgumentException(plugin.messages().get("menuDisplayDisabled"));
     }
 
     private List<String> getConfiguredCurrencies() {

@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "de.cryptocraft"
-version = "1.1.0"
+version = "1.2.0"
 
 val spigotVersion = providers.gradleProperty("spigotVersion").orElse("26.3-R0.1-SNAPSHOT").get()
 val mockitoAgent by configurations.creating
@@ -16,6 +16,7 @@ repositories {
 }
 
 dependencies {
+    implementation("org.xerial:sqlite-jdbc:3.54.1.0")
     compileOnly("org.spigotmc:spigot-api:" + spigotVersion)
     compileOnly("net.md-5:bungeecord-chat:1.21-R0.4")
     compileOnly("com.google.code.gson:gson:2.13.2")
@@ -31,6 +32,13 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.mockito:mockito-core:5.20.0")
     mockitoAgent("org.mockito:mockito-core:5.20.0") { isTransitive = false }
+}
+
+// Include SQLite and its native libraries: servers need no additional database plugin.
+tasks.jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "module-info.class")
 }
 
 java {
@@ -51,7 +59,18 @@ abstract class MockitoAgentArguments : CommandLineArgumentProvider {
 }
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
     jvmArgumentProviders.add(objects.newInstance<MockitoAgentArguments>().apply { agentFiles.from(mockitoAgent) })
+}
+
+// An opt-in companion for isolated local server tests; never included in the released plugin.
+val serverTest by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+}
+tasks.register<Jar>("serverTestJar") {
+    dependsOn(tasks.named(serverTest.classesTaskName))
+    archiveBaseName.set("CryptoCraft-ServerQA")
+    from(serverTest.output)
 }
 
 tasks.wrapper {

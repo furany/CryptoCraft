@@ -7,6 +7,7 @@ import java.util.*;
 final class ConfigValidator {
     static List<String> validate(org.bukkit.configuration.ConfigurationSection config) {
         List<String> errors = new ArrayList<>();
+        TradingConfiguration.validate(config, errors);
         range(config, errors, "prices.refresh-interval-seconds", 300, 5, 86400);
         range(config, errors, "prices.minimum-request-interval-seconds", 60, 1, 86400);
         range(config, errors, "prices.request-timeout-seconds", 20, 1, 120);
@@ -45,16 +46,20 @@ final class ConfigValidator {
         var coins = config.getConfigurationSection("coins");
         if (coins == null || coins.getKeys(false).isEmpty())
             errors.add("coins must contain at least one coin");
-        else
+        else {
+            Set<String> providerIds = new HashSet<>();
             for (String symbol : coins.getKeys(false)) {
                 try {
-                    new QuotePair(symbol, coins.getString(symbol, ""), "EUR");
+                    QuotePair pair = new QuotePair(symbol, coins.getString(symbol, ""), "EUR");
+                    if (!providerIds.add(pair.coinId()))
+                        errors.add("coins." + symbol + ": provider ID must be unique");
                 } catch (IllegalArgumentException error) {
                     errors.add("coins." + symbol + ": invalid symbol or API ID");
                 }
                 if (!symbol.equals(symbol.toUpperCase(Locale.ROOT)))
                     errors.add("coins." + symbol + ": symbol must be uppercase");
             }
+        }
         List<String> currencies =
                 config.getStringList("currencies").stream()
                         .map(s -> s.toUpperCase(Locale.ROOT))

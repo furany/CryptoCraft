@@ -69,12 +69,48 @@ class ChartPainterTest {
                     assertTrue(
                             colors.size() >= 5,
                             theme + "/" + style + " must include readable content");
-                    if (size == 3)
-                        ImageIO.write(
+                    ImageIO.write(
                                 image,
                                 "png",
-                                Path.of("build/chart-previews/" + theme + "-" + style + ".png")
+                                Path.of("build/chart-previews/" + theme + "-" + style + "-" + size + ".png")
                                         .toFile());
+                }
+    }
+
+    @Test
+    void sixMarketRowsRenderAndLastRowRefreshesAtEverySize() throws Exception {
+        Instant now = Instant.parse("2026-11-02T12:00:00Z");
+        List<QuotePair> pairs = List.of(new QuotePair("BTC", "bitcoin", "EUR"),
+                new QuotePair("ETH", "ethereum", "EUR"), new QuotePair("SOL", "solana", "EUR"),
+                new QuotePair("XRP", "ripple", "EUR"), new QuotePair("ADA", "cardano", "EUR"),
+                new QuotePair("DOGE", "dogecoin", "EUR"));
+        Map<String, CryptoPriceService.Quote> quotes = new LinkedHashMap<>();
+        String[] amounts = {"64500.25", "2450.75", "145.5", "0.54", "0.34", "0.112"};
+        for (int i = 0; i < pairs.size(); i++) quotes.put(pairs.get(i).key(), new CryptoPriceService.Quote(
+                new BigDecimal(amounts[i]), BigDecimal.valueOf(i - 2.5), now.minusSeconds(30)));
+        Files.createDirectories(Path.of("build/chart-previews"));
+        for (String theme : List.of("dark", "light", "ocean"))
+            for (int size = 1; size <= 3; size++)
+                for (boolean terminal : List.of(false, true)) {
+                    var board = TerminalModelTest.board(BlockFace.SOUTH, size);
+                    board = board.edited(board.symbol(), board.coinId(), board.currency(), board.displayFacing(),
+                            board.settings().with("theme", theme)).withMarketPairs(pairs).withTerminal(terminal);
+                    var labels = Map.of("language", "de", "terminalReady", "true");
+                    var before = new ChartPainter(board, quotes, Set.of(pairs.get(3).key()), labels, now).drawFrame();
+                    var changed = new LinkedHashMap<>(quotes);
+                    changed.put(pairs.getLast().key(), new CryptoPriceService.Quote(new BigDecimal("0.987"),
+                            new BigDecimal("9.87"), now));
+                    var after = new ChartPainter(board, changed, Set.of(pairs.get(3).key()), labels, now).drawFrame();
+                    int changedPixels = 0;
+                    for (int y = 0; y < before.getHeight(); y++)
+                        for (int x = 0; x < before.getWidth(); x++)
+                            if (before.getRGB(x, y) != after.getRGB(x, y)) {
+                                changedPixels++;
+                                assertTrue(y > before.getHeight() / 2, "Sixth row belongs in the bottom half");
+                            }
+                    assertTrue(changedPixels > 10, theme + "/" + size + "/" + terminal + " must show changing sixth-row data");
+                    ImageIO.write(before, "png", Path.of("build/chart-previews/market-" + theme + "-" + size
+                            + (terminal ? "-terminal" : "") + ".png").toFile());
                 }
     }
 

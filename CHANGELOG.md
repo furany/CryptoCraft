@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.0 - 2026-11-03
+
+### Added
+
+- Vault-compatible server-money trading, separate from the existing paper portfolio, with an unlimited broker, reserve-funded broker, and FIFO player matching at external provider prices.
+- Budget buys, quantity buys with a confirmed maximum budget, quantity/percentage sells, price guards, previews, confirmations, depot, order status/cancellation, and history.
+- SQLite balances, full order reservations, partial fills, offline execution, expiry, reserve, and audit journal. Uncertain Vault movements freeze the affected account and require explicit administrative reconciliation without replaying the call.
+- Admin-approved vanilla computer terminals with map screens, display-entity housing/stand/keyboard, six-block access checks, and optional labeled/anywhere modes.
+- Market boards with one to six ordered coins in a shared currency, default 2 × 2 maps, plus coin catalog search and separate display/trading controls.
+- Default coins XRP, ADA, DOGE, LTC, BNB, AVAX, and LINK for new installations, alongside BTC, ETH, and SOL.
+- `/crypto trade`, `/crypto depot`, `/crypto orders`, `/crypto terminal`, `/crypto market`, `/crypto economy`, and `/crypto coin`.
+
+### Improved
+
+- Trading requires a fresh, verifiable provider timestamp after order acceptance, and after both orders for player matching. Cached history and reception timestamps cannot authorize fills.
+- Searchable/paginated inventory flows for boards, watchlists, alarms, trading, and holdings, with German and English messages.
+- Chart and market layouts for 1 × 1 through 3 × 3 maps, full terminal geometry protection, neighboring-chunk cleanup, and tests for legacy/market persistence and entity lifecycle.
+- Mode changes reject open orders/unclear transfers; reference currency, factor, precision, and provider identity are protected after economic activity. Disabled coins keep their holdings.
+- Legacy configurations without `trading.reference-currency` inherit their valid existing `default-currency`, including USD-only setups; new installations default to EUR, and reloads without that key retain the active trading currency.
+- Trading setup, defaults, permissions, migrations, exact rounding behavior, and manual reconciliation are documented in [the trading guide](docs/TRADING.md).
+
+### Upgrading from 1.1.0
+
+1. Stop the server and back up the complete CryptoCraft directory and any economy provider's data.
+2. Replace the JAR with `CryptoCraft-1.2.0.jar` and restart on Java 25. Install Vault and a compatible economy provider to enable server-money transfers.
+3. Existing board/configuration/message data and the paper portfolio are retained. Existing boards remain nonterminal until administratively approved; existing coin lists are not replaced.
+4. Review the mode, reference currency, factor, fees, and access before approving terminals. New installations default to `unlimited`, EUR, factor 1, zero fees, and terminal-only access. The SQLite depot is separate from the old paper portfolio.
+
 ## 1.1.0 - 2026-10-07
 
 ### Added

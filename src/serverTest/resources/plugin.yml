@@ -1,0 +1,5 @@
+name: CryptoCraftServerQA
+version: 1.0
+main: de.cryptocraft.qa.ServerSmokePlugin
+api-version: '26.3'
+depend: [CryptoCraft, Vault, Essentials]
