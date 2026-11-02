@@ -2,7 +2,7 @@
 
 ![CryptoCraft banner: live cryptocurrency prices on in-game boards](assets/cryptocraft-banner.png)
 
-CryptoCraft displays cryptocurrency prices and history on floating map boards above ordinary Minecraft blocks. Boards can be edited through an inventory menu and expanded to 3 x 3 maps. Supports Spigot, Paper, and Purpur 26.3.
+CryptoCraft displays cryptocurrency prices and history on floating map boards above ordinary Minecraft blocks. Players can trade coins with server money through admin-approved computer terminals. Boards, alerts, and trading use the same external price source. Targets Spigot, Paper, and Purpur 26.3 on Java 25.
 
 The anchor stays a normal vanilla block. Boards show the last cached price, price history, and whether the quote is stale. Breaking the anchor removes the display and frees its owner's board slot.
 
@@ -10,11 +10,14 @@ The anchor stays a normal vanilla block. Boards show the last cached price, pric
 
 ## Download
 
-Download the plugin from [Modrinth](https://modrinth.com/plugin/cryptocraft-furany). Tagged releases are also available from [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place the JAR in your server's `plugins` directory and restart the server. See the [changelog](CHANGELOG.md) for version 1.1.0.
+Published releases are available on [Modrinth](https://modrinth.com/plugin/cryptocraft-furany) and [GitHub Releases](https://github.com/furany/CryptoCraft/releases/latest). Place the JAR in your server's `plugins` directory and restart the server. This source tree builds version 1.2.0; see the [changelog](CHANGELOG.md) and [trading setup and migration guide](docs/TRADING.md).
 
 ## Features
 
 - **Customizable charts:** three themes, chart/price/compact views, 1-168 hour windows, optional high/low values, and square walls of 1 x 1, 2 x 2, or 3 x 3 maps.
+- **Market boards and computer terminals:** up to six coins in a common currency, default 2 x 2 market screens, and vanilla display-entity housing, stand, and keyboard. No resource pack required.
+- **Server-money trading:** optional Vault economy integration, budget or quantity buys, quantity or percentage sells, confirmations, depot, orders, and trade history. Choose an unlimited broker, funded reserve broker, or player-to-player matching at external prices.
+- **Durable economy ledger:** SQLite reservations and journal, offline execution, expiry/cancellation, strict provider timestamps, and explicit reconciliation for uncertain Vault transfers.
 - **Board menu and editor:** manage your boards, change coin/currency, height and facing, rename displays, and confirm removals in game.
 - **Watchlists and comparisons:** follow configured pairs and compare their percentage changes over a selected time window.
 - **Price alerts and redstone:** one-shot or repeating alerts, queued offline notifications, and optional signals through an existing lever.
@@ -24,7 +27,38 @@ Download the plugin from [Modrinth](https://modrinth.com/plugin/cryptocraft-fura
 
 ## In-game screenshots
 
-Captured on Minecraft 26.3 on October 7, 2026.
+CryptoCraft 1.2.0, captured in Minecraft 26.3 on a local Paper 26.3 server on November 2, 2026. These are unmodified 1920 × 1080 Minecraft F2 screenshots, without a resource pack or shaders. Prices, chart history, and account balances were controlled demo data; these images demonstrate the interface, not live market prices.
+
+### Computer terminals in three sizes
+
+The same six-coin market fits 1 × 1, 2 × 2, and 3 × 3 map screens, with vanilla display-entity housing, stands, and keyboards.
+
+![CryptoCraft computer terminals with three different map-screen sizes](screenshots/v1.2.0/terminal-sizes.png)
+
+### Bitcoin chart terminal
+
+A single-coin terminal shows its reference price, chart, and range, with a right-click shortcut to the exchange.
+
+![Bitcoin chart on a CryptoCraft computer terminal](screenshots/v1.2.0/bitcoin-chart-terminal.png)
+
+### Confirm a trade
+
+The confirmation shows the reference price and age, estimated quantity and fee, maximum debit, and execution price guard.
+
+![Bitcoin buy confirmation with budget, fees, and execution price guard](screenshots/v1.2.0/trade-confirmation.png)
+
+### Server-money depot
+
+The depot shows available and reserved coins and their estimated reference value. These demo holdings include seeded test coins.
+
+![Server-money depot showing available Bitcoin holdings and reserved coins](screenshots/v1.2.0/server-money-depot.png)
+
+[View all six 1.2.0 screenshots and English/German gallery captions](screenshots/v1.2.0/README.md), including the market-terminal close-up and filled-order status. The gallery includes the original PNG files and captions for reuse.
+
+<details>
+<summary>Archived screenshots from version 1.1.0</summary>
+
+These older screenshots show version 1.1.0 on Minecraft 26.3, captured on October 7, 2026. The 1.2.0 menus and terminal models have changed.
 
 ### Live chart overview
 
@@ -62,10 +96,13 @@ An expanded ETH/EUR wall displays the same shared price history on a larger canv
 
 ![Large ETH/EUR chart wall above the smaller BTC and SOL boards](screenshots/large-chart-wall.png)
 
+</details>
+
 ## Requirements
 
 - Spigot, Paper, or Purpur 26.3
 - Java 25
+- Vault and a compatible economy provider, such as EssentialsX, for server-money trading. Charts, alerts, and paper portfolios work without them.
 - The checked-in Gradle wrapper downloads the pinned Gradle version for local builds.
 
 ## Build locally
@@ -76,9 +113,9 @@ Install a Java 25 JDK, then run this from the project directory:
 ./gradlew clean build
 ```
 
-On Windows use `gradlew.bat clean build`. The build runs the automated tests before completing.
+On Windows use `gradlew.bat clean build`. The build runs the automated tests before completing. See [validation and disposable server tests](docs/TESTING.md) for the integration harness and local test evidence.
 
-The JAR is written to `build/libs/` (currently `CryptoCraft-1.1.0.jar`). Copy it into your server's `plugins` directory and restart the server.
+The JAR is written to `build/libs/CryptoCraft-1.2.0.jar`. SQLite and its native libraries are included. Copy it into your server's `plugins` directory and restart the server.
 
 ## Build with GitHub Actions
 
@@ -106,6 +143,14 @@ Commands:
 - `/crypto remove [board-id]` — remove your chart by ID or from the block you are looking at; admins can remove any chart.
 - `/crypto list` — list your charts. Admins see all charts; players see their own. Players with teleport permission can click an entry to teleport.
 - `/crypto menu` — open the board menu and editor.
+- `/crypto market <coin,coin,...> [currency]` — create a market board with one to six coins, initially 2 x 2 maps.
+- `/crypto terminal <board-id> <enable|disable>` — administratively approve or revoke a board as a trading terminal.
+- `/crypto trade [coin]` — open the exchange; order acceptance normally requires a nearby terminal.
+- `/crypto trade <buy|buy-quantity|sell> <coin> <amount>` — open a confirmation; `buy` uses a total budget including fees.
+- `/crypto depot [history]` — inspect server-money coin holdings and executed trades from anywhere.
+- `/crypto orders [cancel <id>]` — inspect or cancel orders from anywhere.
+- `/crypto economy <status|reserve|grant|resolve> ...` — inspect/reconcile transfers and manage reserve funding or audited coin grants; administrative permission required.
+- `/crypto coin <list|search|add|enable|disable|show|hide> ...` — manage unique provider IDs and separate display/trading availability; administrative permission required.
 - `/crypto edit <board-id> <setting> <value>` — change a board's settings directly.
 - `/crypto tp <board-id>` — teleport to one of your charts. Requires `cryptocraft.teleport`; admins can teleport to any chart.
 - `/crypto price <coin> [currency]` — show a cached quote and its age; queue a request when needed.
@@ -119,7 +164,9 @@ Commands:
 
 Tab completion suggests configured coins, currencies, and board IDs you can access.
 
-BTC, ETH, and SOL are configured by default. EUR is the default currency; EUR, USD, and TRY (Turkish lira) are available. For example, use `/crypto place BTC USD` for the Bitcoin price in US dollars or `/crypto place BTC TRY` for Turkish lira. Boards, watchlists, alerts, virtual holdings, and temporary command requests share batched price requests subject to the global minimum interval.
+New installations configure BTC, ETH, SOL, XRP, ADA, DOGE, LTC, BNB, AVAX, and LINK. Existing coin configurations are preserved. EUR is the default currency; EUR, USD, and TRY (Turkish lira) are available. For example, use `/crypto place BTC USD` for the Bitcoin price in US dollars or `/crypto place BTC TRY` for Turkish lira. Boards, watchlists, alerts, trading orders, virtual holdings, and temporary command requests share batched price requests subject to the global minimum interval.
+
+For server-money trading, install Vault plus an economy provider, create a board, then run `/crypto terminal <board-id> enable` as an operator. Right-click its screen to trade. The default broker is unlimited, with EUR reference prices, factor 1, zero fees, a 1% price guard, five-minute orders, and a six-block terminal radius. A preview is not an executable quote: the order waits for a newer, verified provider timestamp. See [the trading guide](docs/TRADING.md) for modes, budgets, permissions, recovery, and all defaults.
 
 ## Configuration
 
@@ -165,6 +212,13 @@ coins:
   BTC: bitcoin
   ETH: ethereum
   SOL: solana
+  XRP: ripple
+  ADA: cardano
+  DOGE: dogecoin
+  LTC: litecoin
+  BNB: binancecoin
+  AVAX: avalanche-2
+  LINK: chainlink
 
 currencies:
   - EUR
@@ -200,7 +254,7 @@ LuckPerms examples:
 
 `cryptocraft.teleport` defaults to operators. Grant it explicitly to allow non-admin players to teleport to their own boards; players without it cannot use `/crypto tp` or clickable board entries. Admins (the permission configured at `boards.admin-permission`) can teleport to any board.
 
-The plugin uses Bukkit permissions directly and has no API dependency on LuckPerms, EssentialsX, or Vault. WorldGuard and PlaceholderAPI are optional integrations. EssentialsX can remain installed; CryptoCraft uses the `/crypto` command.
+The plugin uses Bukkit permissions directly and has no dependency on LuckPerms. Vault and a compatible economy provider are optional for the plugin and required for server-money transfers. WorldGuard and PlaceholderAPI remain optional. `cryptocraft.trade` defaults to everyone; `cryptocraft.terminal.admin` and `cryptocraft.economy.admin` default to operators. Terminal changes require the terminal permission even for board owners.
 
 ## CoinGecko API
 
@@ -219,6 +273,7 @@ You can also edit directly:
 
 ```text
 /crypto edit <board-id> coin ETH
+/crypto edit <market-board-id> coins BTC,ETH,SOL
 /crypto edit <board-id> currency USD
 /crypto edit <board-id> hours 168
 /crypto edit <board-id> facing north
@@ -287,7 +342,7 @@ portfolio:
 
 Each player gets the configured starting balance on first use. Existing accounts keep their currency and balance when defaults change. Trades require fresh cached prices, positive quantities with at most 12 decimal places, sufficient virtual cash or holdings, and `cryptocraft.portfolio`. The ledger tracks holdings, average acquisition cost, realized profit, total value, and the last 100 trades. Valuations label missing or stale quotes as incomplete. Previously held coins can still be sold if their symbol is removed from config.
 
-This feature uses game money only; it does not connect to real wallets or Vault balances. Accounts, watchlists, alerts, and pending notifications are stored in `players.yml`.
+This simulation uses its own virtual cash. It never reads or modifies Vault balances, the server-money depot, or the reserve. Accounts, watchlists, alerts, and pending notifications are stored in `players.yml`. Server-money trading is a separate feature described in [the trading guide](docs/TRADING.md). Neither feature connects to real wallets or sends cryptocurrency.
 
 ## Optional history import and integrations
 
@@ -317,8 +372,10 @@ If PlaceholderAPI is installed and `integrations.placeholderapi` is enabled, the
 
 Boards are cleaned up after anchor destruction by players, explosions, or piston movement. Periodic validation catches anchors removed by external tools in loaded chunks. Displays are protected against removal, rotation, and item extraction. Teleports reject dangerous blocks, liquids, partial-height floors and positions outside the world border.
 
-All data writes are coalesced on one background writer, use temporary files and atomic replacement where supported, and keep the preceding version in `.bak`. Startup can recover missing or syntactically damaged primary YAML from its backup and retains damaged input in `.damaged`. Invalid unrecoverable data stops startup instead of overwriting saved state. Shutdown flushes pending writes; an abrupt crash can lose changes from the last two seconds.
+YAML data writes are coalesced on one background writer, use temporary files and atomic replacement where supported, and keep the preceding version in `.bak`. Startup can recover missing or syntactically damaged primary YAML from its backup and retains damaged input in `.damaged`. Invalid unrecoverable data stops startup instead of overwriting saved state. Shutdown flushes pending YAML writes; an abrupt crash can lose changes from the last two seconds of YAML updates.
+
+The separate `economy.db` uses SQLite transactions for balances, reservations, orders, reserve, transfers, and journal entries. Money transfers across Vault and SQLite cannot be committed atomically together. A crash during a Vault call therefore freezes the affected account until an administrator verifies and reconciles the transfer; it is never blindly retried. Back up the complete plugin directory with the server stopped, together with the economy provider's data. See [recovery instructions](docs/TRADING.md#uncertain-transfers-and-recovery).
 
 Chart images are computed on a separate worker from immutable snapshots, cached across matching boards, and copied to map canvases only when the image changes. Chunk/entity indexes reduce repeated searches during normal refreshes.
 
-The tests cover price parsing, history imports, API retries, stale data, reload handling, permissions, data recovery, portfolio accounting, alerts, configuration, and chart rendering. Chart previews are in `build/chart-previews/`; test reports are in `build/reports/tests/test/`.
+The tests cover price parsing, history imports, API retries, stale data, reload handling, permissions, data recovery, portfolio accounting, alerts, configuration, external-price trading, reservations, budgets, partial fills, persistence/reconciliation, terminal geometry/lifecycle, and chart rendering. Chart and six-coin market previews for 1 x 1 through 3 x 3 are in `build/chart-previews/`; test reports are in `build/reports/tests/test/`. Automated raster previews do not replace in-game visual review.

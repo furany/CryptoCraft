@@ -22,6 +22,7 @@ class QuoteCodecTest {
         assertEquals(new BigDecimal("1.23456789123456789e-7"), quotes.get("bitcoin:eur").price());
         assertEquals(0, new BigDecimal("-25").compareTo(quotes.get("bitcoin:eur").change24h()));
         assertEquals(now, quotes.get("bitcoin:eur").updatedAt());
+        assertTrue(quotes.get("bitcoin:eur").sourceVerified());
     }
 
     @Test
@@ -35,6 +36,7 @@ class QuoteCodecTest {
                         .get("bitcoin:eur");
         assertNull(quote.change24h());
         assertEquals(now, quote.updatedAt());
+        assertFalse(quote.sourceVerified(), "Receipt time must never authorize an economy trade");
     }
 
     @Test

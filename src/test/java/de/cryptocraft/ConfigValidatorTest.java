@@ -48,8 +48,21 @@ class ConfigValidatorTest {
         legacy.set("portfolio", null);
         legacy.set("integrations", null);
         legacy.set("prices.backfill", null);
+        legacy.set("trading", null);
         assertTrue(
                 ConfigValidator.validate(legacy).isEmpty(),
                 ConfigValidator.validate(legacy).toString());
+    }
+
+    @Test
+    void rejectsDuplicateProviderIdsAndInvalidTradingAccess() {
+        var config = config();
+        config.set("coins.ALIAS", "bitcoin");
+        config.set("trading.access", "public");
+        config.set("trading.terminal-radius", Double.NaN);
+        var errors = ConfigValidator.validate(config);
+        assertTrue(errors.stream().anyMatch(e -> e.contains("provider ID must be unique")));
+        assertTrue(errors.stream().anyMatch(e -> e.startsWith("trading.access")));
+        assertTrue(errors.stream().anyMatch(e -> e.startsWith("trading.terminal-radius")));
     }
 }

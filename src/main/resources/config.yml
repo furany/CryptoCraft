@@ -59,6 +59,13 @@ coins:
   BTC: bitcoin
   ETH: ethereum
   SOL: solana
+  XRP: ripple
+  ADA: cardano
+  DOGE: dogecoin
+  LTC: litecoin
+  BNB: binancecoin
+  AVAX: avalanche-2
+  LINK: chainlink
 
 currencies:
   - EUR
@@ -87,3 +94,28 @@ integrations:
   placeholderapi: true
   # Request all configured pairs for scoreboards even when no board/watchlist exists.
   placeholderapi-preload: false
+
+# Server-money trading is separate from the simulated portfolio above.
+# Vault plus an economy provider (for example EssentialsX) is required for money transfers.
+trading:
+  enabled: true
+  mode: unlimited # unlimited | reserve | p2p
+  access: terminals # terminals | anywhere
+  terminal-style: computer # computer | labeled
+  terminal-radius: 6
+  reference-currency: EUR
+  units-per-reference: "1"
+  # Percentages, disclosed and fixed for each confirmed order.
+  buy-fee-percent: "0"
+  sell-fee-percent: "0"
+  price-tolerance-percent: "1"
+  order-lifetime-seconds: 300
+  maximum-quote-age-seconds: 120
+  maximum-open-orders: 20
+  minimum-order-value: "1"
+  maximum-order-value: "1000000"
+  # Used only when the provider does not specify its fractional precision.
+  money-decimals: 2
+  # These lists never erase saved holdings. Disabling trading cancels open orders.
+  disabled-coins: []
+  display-disabled-coins: []

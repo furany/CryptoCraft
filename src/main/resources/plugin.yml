@@ -4,15 +4,24 @@ main: de.cryptocraft.CryptoCraftPlugin
 api-version: '26.3'
 description: Shows cryptocurrency prices on placeable boards.
 authors: [CryptoCraft]
-softdepend: [WorldGuard, PlaceholderAPI]
+softdepend: [WorldGuard, PlaceholderAPI, Vault]
 
 commands:
   crypto:
     description: Manage cryptocurrency price boards.
-    usage: /crypto <place|remove|list|price|tp|edit|menu|watch|compare|alert|signal|portfolio|status|reload>
+    usage: /crypto <place|market|terminal|trade|depot|orders|economy|coin|remove|list|price|tp|edit|menu|watch|compare|alert|signal|portfolio|status|reload>
     aliases: [cryptocraft]
 
 permissions:
+  cryptocraft.trade:
+    description: Allows trading with server money at authorized terminals.
+    default: true
+  cryptocraft.terminal.admin:
+    description: Allows administrators to enable and configure trading terminals.
+    default: op
+  cryptocraft.economy.admin:
+    description: Allows treasury management, coin grants and audited transfer reconciliation.
+    default: op
   cryptocraft.use:
     description: Allows use of CryptoCraft commands.
     default: true

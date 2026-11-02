@@ -25,7 +25,8 @@ final class QuoteCodec {
                 quotes.put(
                         id.toLowerCase(Locale.ROOT) + ":" + currency.toLowerCase(Locale.ROOT),
                         new CryptoPriceService.Quote(
-                                price, number(object, currency + "_24h_change"), updated));
+                                price, number(object, currency + "_24h_change"), updated,
+                                timestamp != null));
             }
         }
         if (quotes.isEmpty())

@@ -36,9 +36,17 @@ public final class CryptoChartRenderer extends MapRenderer {
 
     public synchronized void update() {
         var quote = prices.getQuote(board.coinId(), board.currency());
+        Map<String, CryptoPriceService.Quote> rowQuotes = new LinkedHashMap<>();
+        Set<String> stalePairs = new HashSet<>();
+        for (QuotePair pair : board.quotePairs()) {
+            var value = prices.getQuote(pair.coinId(), pair.currency());
+            if (value != null) rowQuotes.put(pair.key(), value);
+            if (prices.isStale(value)) stalePairs.add(pair.key());
+        }
         Instant now = Instant.now();
+        boolean terminalReady = plugin.trading() != null && plugin.trading().available();
         String key =
-                board.quoteKey()
+                board.quotePairs().toString() + ":" + board.terminal() + ":" + terminalReady + ":" + rowQuotes + ":" + stalePairs
                         + ":"
                         + board.symbol()
                         + ":"
@@ -60,8 +68,10 @@ public final class CryptoChartRenderer extends MapRenderer {
                         "chartCollecting",
                         "chartCoverage")) labels.put(label, plugin.messages().get(label));
         labels.put("language", plugin.messages().getLanguage());
-        ChartPainter painter =
-                new ChartPainter(
+        labels.put("terminalReady", String.valueOf(terminalReady));
+        ChartPainter painter = board.market()
+                ? new ChartPainter(board, rowQuotes, stalePairs, labels, now)
+                : new ChartPainter(
                         board,
                         quote,
                         prices.getHistory(board.coinId(), board.currency()),

@@ -239,6 +239,8 @@ public final class CryptoPriceService {
                                             recovered();
                                             if (plugin.features() != null)
                                                 plugin.features().evaluate(accepted);
+                                            if (plugin.trading() != null)
+                                                plugin.trading().onQuotes(accepted);
                                         } catch (RuntimeException exception) {
                                             long delay =
                                                     applyServerErrorBackoff(
@@ -506,9 +508,6 @@ public final class CryptoPriceService {
     }
 
     private void loadHistory() {
-        if (!historyFile.exists()) {
-            return;
-        }
         YamlConfiguration saved = plugin.storage().load(historyFile);
         backfilled.addAll(saved.getStringList("backfilled"));
         ConfigurationSection section = saved.getConfigurationSection("history");
@@ -574,7 +573,7 @@ public final class CryptoPriceService {
                             new Quote(
                                     price,
                                     change == null ? null : new BigDecimal(change),
-                                    updatedAt));
+                                    updatedAt, false));
             }
         }
         backfilled.retainAll(history.keySet());
@@ -649,7 +648,9 @@ public final class CryptoPriceService {
     private Set<String> desiredPairs() {
         demand.entrySet().removeIf(e -> e.getValue().isBefore(Instant.now()));
         Set<String> pairs = new LinkedHashSet<>(demand.keySet());
-        boards.getBoards().forEach(b -> pairs.add(b.quoteKey()));
+        boards.getBoards().forEach(b -> b.quotePairs().forEach(pair -> pairs.add(pair.key())));
+        if (plugin.trading() != null)
+            plugin.trading().demandedPairs().forEach(pair -> pairs.add(pair.key()));
         if (plugin.features() != null) pairs.addAll(plugin.features().quotePairs());
         if (plugin.getConfig().getBoolean("integrations.placeholderapi-preload", false)) {
             var coins = plugin.getConfig().getConfigurationSection("coins");
@@ -700,6 +701,8 @@ public final class CryptoPriceService {
                 >= plugin.getConfig().getLong("prices.refresh-interval-seconds", 300)) refresh();
         else if (!demand.isEmpty()
                 && demand.keySet().stream().anyMatch(key -> !quotes.containsKey(key))) refresh();
+        else if (plugin.trading() != null && !plugin.trading().demandedPairs().isEmpty()
+                && !now.isBefore(nextRequestAt())) refresh();
         if (!inFlight.get()) backfill();
     }
 
@@ -712,7 +715,7 @@ public final class CryptoPriceService {
                 >= plugin.getConfig().getInt("prices.backfill.maximum-requests-per-hour", 6))
             return;
         String pair =
-                desiredPairs().stream()
+                historyPairs().stream()
                         .filter(key -> !backfilled.contains(key))
                         .filter(
                                 key ->
@@ -858,6 +861,15 @@ public final class CryptoPriceService {
         lastLoggedFailure = null;
     }
 
+    /** Market-only and trading-only demand needs live prices, not a paid history import. */
+    private Set<String> historyPairs() {
+        Set<String> pairs = new LinkedHashSet<>(demand.keySet());
+        boards.getBoards().stream().filter(board -> !board.market())
+                .forEach(board -> board.quotePairs().forEach(pair -> pairs.add(pair.key())));
+        if (plugin.features() != null) pairs.addAll(plugin.features().quotePairs());
+        return pairs;
+    }
+
     private void onMain(Runnable action) {
         if (closed || !plugin.isEnabled()) return;
         try {
@@ -875,7 +887,12 @@ public final class CryptoPriceService {
         saveHistory();
     }
 
-    public record Quote(BigDecimal price, BigDecimal change24h, Instant updatedAt) {}
+    public record Quote(BigDecimal price, BigDecimal change24h, Instant updatedAt,
+                        boolean sourceVerified) {
+        public Quote(BigDecimal price, BigDecimal change24h, Instant updatedAt) {
+            this(price, change24h, updatedAt, true);
+        }
+    }
 
     public record PricePoint(Instant observedAt, BigDecimal price) {}
 }

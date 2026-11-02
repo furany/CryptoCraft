@@ -141,4 +141,48 @@ class CryptoPriceServiceTest {
         assertTrue(service.isStale(service.getQuote("bitcoin", "EUR")));
         assertTrue(service.getHistory("bitcoin", "EUR").isEmpty());
     }
+
+    @Test
+    void chartsAndTradingReceiveTheSameVerifiedSnapshot() {
+        var trading = mock(TradingService.class);
+        when(plugin.trading()).thenReturn(trading);
+        service.requestPair("bitcoin", "EUR");
+        finish(200, "{\"bitcoin\":{\"eur\":123.456,\"last_updated_at\":"
+                + Instant.now().getEpochSecond() + "}}", Map.of());
+        var quote = service.getQuote("bitcoin", "EUR");
+        assertTrue(quote.sourceVerified());
+        verify(trading).onQuotes(argThat(snapshot -> snapshot.get("bitcoin:eur") == quote));
+    }
+
+    @Test
+    void missingTimestampStaysUnverifiedWhenForwardedToTrading() {
+        var trading = mock(TradingService.class);
+        when(plugin.trading()).thenReturn(trading);
+        service.requestPair("bitcoin", "EUR");
+        finish(200, "{\"bitcoin\":{\"eur\":123.456}}", Map.of());
+        assertFalse(service.getQuote("bitcoin", "EUR").sourceVerified());
+        verify(trading).onQuotes(argThat(snapshot -> !snapshot.get("bitcoin:eur").sourceVerified()));
+    }
+
+    @Test
+    void missingHistoryFileRecoversBackupWithoutAuthorizingTrades() throws Exception {
+        service.close();
+        storage.close();
+        storage = new AtomicYamlStore(Logger.getAnonymousLogger());
+        when(plugin.storage()).thenReturn(storage);
+        java.nio.file.Files.deleteIfExists(directory.resolve("history.yml"));
+        var saved = new YamlConfiguration();
+        saved.set("history.btc.coin-id", "bitcoin");
+        saved.set("history.btc.currency", "eur");
+        saved.set("history.btc.last-price", "123.45");
+        saved.set("history.btc.updated-at", Instant.now().toEpochMilli());
+        saved.save(directory.resolve("history.yml.bak").toFile());
+        var boards = mock(CryptoBoardService.class);
+        when(boards.getBoards()).thenReturn(List.of());
+        service = new CryptoPriceService(plugin, boards, http);
+        var restored = service.getQuote("bitcoin", "EUR");
+        assertEquals(new java.math.BigDecimal("123.45"), restored.price());
+        assertFalse(restored.sourceVerified(), "Restart must wait for a new provider snapshot");
+        assertTrue(java.nio.file.Files.exists(directory.resolve("history.yml")));
+    }
 }
